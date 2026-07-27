@@ -4,18 +4,13 @@
 // same set, so a visitor only ever occupies one entry no matter how many
 // times they ping.
 
-const REST_URL = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || process.env.KV_URL;
-const REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+const { getClient } = require('../lib/redis');
 
 const ID_RE = /^[a-zA-Z0-9-]{8,64}$/;
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'method not allowed' });
-    return;
-  }
-  if (!REST_URL || !REST_TOKEN) {
-    res.status(200).json({ ok: false, reason: 'not configured' });
     return;
   }
 
@@ -29,11 +24,15 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const now = Math.floor(Date.now() / 1000);
+  const clientPromise = getClient();
+  if (!clientPromise) {
+    res.status(200).json({ ok: false, reason: 'not configured' });
+    return;
+  }
+
   try {
-    await fetch(`${REST_URL}/zadd/visits/${now}/${encodeURIComponent(id)}`, {
-      headers: { Authorization: `Bearer ${REST_TOKEN}` },
-    });
+    const client = await clientPromise;
+    await client.zAdd('visits', { score: Math.floor(Date.now() / 1000), value: id });
     res.status(204).end();
   } catch {
     res.status(200).json({ ok: false });
