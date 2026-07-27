@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://feuxgironde.vercel.app/sitemap.xml
