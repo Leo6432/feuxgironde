@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Incendie de Saumos — suivi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;500;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --char:#14120F;
+    --ash:#8B857B;
+    --ash-lo:#3A342D;
+    --bone:#F0EBE3;
+    --ember:#E8541F;
+    --heat:#F5A524;
+    --pine:#7A9B62;
+    --smoke:#5B6670;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;padding:20px 14px 48px;
+    background:var(--char);color:var(--bone);
+    font-family:'IBM Plex Sans',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:680px;margin:0 auto}
+
+  header{border-bottom:1px solid var(--ash-lo);padding-bottom:18px;margin-bottom:8px}
+  .eyebrow{
+    font-family:'IBM Plex Mono',monospace;font-size:10px;
+    letter-spacing:.22em;text-transform:uppercase;color:var(--ember);margin-bottom:8px;
+  }
+  h1{
+    font-family:'Oswald',Impact,sans-serif;font-weight:700;font-size:34px;
+    line-height:.98;letter-spacing:-.01em;text-transform:uppercase;margin:0 0 10px;
+  }
+  h1 span{color:var(--ember)}
+  .lede{font-size:13px;line-height:1.5;color:var(--ash);margin:0}
+
+  h2{
+    font-family:'Oswald',Impact,sans-serif;font-weight:500;font-size:17px;
+    letter-spacing:.06em;text-transform:uppercase;margin:38px 0 4px;
+  }
+  .sub{
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;
+    color:var(--smoke);margin-bottom:16px;line-height:1.5;
+  }
+
+  /* ── panneau situation ── */
+  .panel{
+    display:grid;grid-template-columns:repeat(4,1fr);
+    border-top:1px solid var(--ash-lo);border-left:1px solid var(--ash-lo);
+  }
+  .row{
+    border-bottom:1px solid var(--ash-lo);border-right:1px solid var(--ash-lo);
+    padding:13px 8px 12px;text-align:center;
+    display:flex;flex-direction:column;justify-content:space-between;gap:8px;
+  }
+  .k{
+    font-family:'IBM Plex Mono',monospace;font-size:9.5px;
+    color:var(--smoke);letter-spacing:.06em;line-height:1.4;text-transform:uppercase;
+  }
+  .v{
+    font-family:'Oswald',sans-serif;font-weight:500;font-size:22px;
+    line-height:1;letter-spacing:.01em;
+  }
+  .v small{
+    font-family:'IBM Plex Mono',monospace;font-weight:400;font-size:9px;
+    color:var(--smoke);display:block;margin-top:5px;letter-spacing:.04em;
+    text-transform:none;line-height:1.3;
+  }
+
+  /* ── évolutions du jour ── */
+  .ev{
+    border-left:2px solid var(--ash-lo);padding:0 0 14px 14px;
+    position:relative;
+  }
+  .ev:last-child{padding-bottom:0}
+  .ev::before{
+    content:'';position:absolute;left:-4px;top:6px;width:6px;height:6px;
+    border-radius:50%;background:var(--ash-lo);
+  }
+  .ev.on::before{background:var(--ember)}
+  .ev-t{
+    font-family:'IBM Plex Mono',monospace;font-size:10px;
+    color:var(--ember);letter-spacing:.1em;text-transform:uppercase;
+  }
+  .ev-b{font-size:12.5px;line-height:1.55;color:var(--ash);margin-top:3px}
+  .ev-b b{color:var(--bone);font-weight:500}
+
+  /* ── barres surface ── */
+  .scar{border-top:1px solid var(--ash-lo);padding:11px 0 9px}
+  .scar:last-of-type{border-bottom:1px solid var(--ash-lo)}
+  .scar-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .when{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--bone)}
+  .when em{font-style:normal;color:var(--smoke)}
+  .val{font-family:'Oswald',sans-serif;font-weight:500;font-size:19px;white-space:nowrap}
+  .bar{height:5px;background:var(--ash-lo);margin-top:8px;border-radius:1px;overflow:hidden}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,#8C2A0C,var(--ember));border-radius:1px}
+  .meta{display:flex;gap:14px;margin-top:6px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--smoke)}
+  .meta b{color:var(--heat);font-weight:500}
+  .bolt{
+    display:inline-block;margin-left:6px;padding:1px 6px;border-radius:2px;
+    background:rgba(232,84,31,.15);color:var(--ember);
+    font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.08em;vertical-align:2px;
+  }
+
+  /* ── cartes jour ── */
+  .day{border-top:1px solid var(--ash-lo);padding:13px 0}
+  .day:last-of-type{border-bottom:1px solid var(--ash-lo)}
+  .day-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+  .dname{font-family:'Oswald',sans-serif;font-weight:500;font-size:15px;letter-spacing:.05em;text-transform:uppercase}
+  .dname small{
+    font-family:'IBM Plex Mono',monospace;font-weight:400;font-size:9.5px;
+    letter-spacing:.1em;color:var(--smoke);margin-left:7px;text-transform:uppercase;
+  }
+  .risk{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ash);white-space:nowrap}
+  .risk b{font-size:14px;font-weight:600}
+  .gauge{height:3px;background:var(--ash-lo);margin:9px 0;border-radius:1px;overflow:hidden}
+  .gauge i{display:block;height:100%;border-radius:1px}
+  .stats{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{
+    font-family:'IBM Plex Mono',monospace;font-size:10px;padding:3px 7px;
+    border:1px solid var(--ash-lo);border-radius:2px;color:var(--ash);
+  }
+  .chip b{color:var(--bone);font-weight:500}
+  .proj{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--smoke);margin-top:8px}
+  .proj b{color:var(--heat);font-weight:500}
+
+  .lo{color:var(--pine)} .lo-bg{background:var(--pine)}
+  .mid{color:var(--heat)} .mid-bg{background:var(--heat)}
+  .hi{color:var(--ember)} .hi-bg{background:var(--ember)}
+
+  .note{
+    font-size:12px;line-height:1.65;color:var(--ash);
+    margin-top:16px;padding-left:12px;border-left:2px solid var(--ash-lo);
+  }
+  .note strong{color:var(--bone);font-weight:500}
+  .warn{border-left-color:var(--ember)}
+  .warn strong{color:var(--ember)}
+  footer{
+    margin-top:34px;padding-top:14px;border-top:1px solid var(--ash-lo);
+    font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--ash-lo);
+    line-height:1.7;letter-spacing:.03em;
+  }
+  footer b{color:var(--smoke);font-weight:400}
+  @media(max-width:560px){
+    .panel{grid-template-columns:repeat(2,1fr)}
+    .v{font-size:19px}
+  }
+  @media(max-width:400px){
+    h1{font-size:27px}
+    .val{font-size:17px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Gironde · départ Saumos · 22 juillet 2026</div>
+  <h1>42 000 hectares<br><span>stabilisé, pas fixé</span></h1>
+  <p class="lede">Surface brûlée d'après les seuls chiffres de la préfecture de la Gironde, moyens engagés, et projection pour les jours à venir.</p>
+</header>
+
+<h2>Situation</h2>
+<div class="sub">Dernier point préfecture · lundi 27 juillet</div>
+
+<div class="panel">
+  <div class="row"><div class="k">Surface brûlée</div><div class="v">42 000<small>hectares</small></div></div>
+  <div class="row"><div class="k">Statut</div><div class="v">Non fixé<small>stabilisé</small></div></div>
+  <div class="row"><div class="k">Métropole<br>bordelaise</div><div class="v">15 km<small>Martignas-sur-Jalle</small></div></div>
+  <div class="row"><div class="k">Bordeaux<br>centre</div><div class="v">25–30<small>kilomètres</small></div></div>
+
+  <div class="row"><div class="k">Camp<br>de Souge</div><div class="v">1,6 km<small>sur la trajectoire</small></div></div>
+  <div class="row"><div class="k">Évacués<br>Gironde</div><div class="v">220 000</div></div>
+  <div class="row"><div class="k">Maisons<br>détruites</div><div class="v">240<small>dont 175 au Porge</small></div></div>
+  <div class="row"><div class="k">Pompiers<br>blessés</div><div class="v">88<small>2 décès</small></div></div>
+
+  <div class="row"><div class="k">Sapeurs-<br>pompiers</div><div class="v">2 750</div></div>
+  <div class="row"><div class="k">Militaires</div><div class="v">1 500</div></div>
+  <div class="row"><div class="k">Forces de<br>sécurité</div><div class="v">1 440<small>+ 10 Centaures</small></div></div>
+  <div class="row"><div class="k">Moyens<br>aériens</div><div class="v">18<small>dont 9 avions UE</small></div></div>
+</div>
+
+<h2>Dernières évolutions</h2>
+<div class="sub">Lundi 27 juillet</div>
+
+<div class="ev on">
+  <div class="ev-t">Après-midi</div>
+  <div class="ev-b"><b>Reprise à Claouey</b>, dans le nord de la presqu'île du Cap-Ferret, provoquée par la remontée des températures.</div>
+</div>
+<div class="ev">
+  <div class="ev-t">Journée</div>
+  <div class="ev-b">Macron sur place : <b>« la situation la plus difficile depuis la Seconde Guerre mondiale »</b>. Cellule interministérielle de crise le matin.</div>
+</div>
+<div class="ev">
+  <div class="ev-t">Matin</div>
+  <div class="ev-b">Feu <b>« stabilisé » mais « pas fixé »</b> : aucune progression pendant la nuit, aidée par une pluie fine.</div>
+</div>
+<div class="ev">
+  <div class="ev-t">Dimanche</div>
+  <div class="ev-b"><b>Contre-feu tactique</b> allumé aux portes de Marcheprime, décrit comme un recours ultime. Bulldozers en pare-feu à Longarisse et au sud-ouest du lac de Lacanau.</div>
+</div>
+<div class="ev">
+  <div class="ev-t">Consignes</div>
+  <div class="ev-b">Pas d'évacuation de Bordeaux à l'ordre du jour. Aucun retour des évacués tant que le feu n'est pas fixé. La préfète invite les touristes à ne pas rejoindre la Gironde.</div>
+</div>
+
+<h2>Progression</h2>
+<div class="sub">Points de situation préfecture uniquement — les chiffres du ministère<br>comptent la surface « parcourue », pas « brûlée ».</div>
+
+<div class="scar">
+  <div class="scar-top"><div class="when">MER 22 · <em>~23h00</em></div><div class="val">1 000 ha</div></div>
+  <div class="bar"><i style="width:2.4%"></i></div>
+  <div class="meta"><span>Départ du feu</span></div>
+</div>
+<div class="scar">
+  <div class="scar-top"><div class="when">JEU 23 · <em>matin</em></div><div class="val">2 000 ha</div></div>
+  <div class="bar"><i style="width:4.8%"></i></div>
+  <div class="meta"><span>+9 h</span><span><b>+100 %</b></span></div>
+</div>
+<div class="scar">
+  <div class="scar-top"><div class="when">JEU 23 · <em>21h30</em></div><div class="val">4 800 ha</div></div>
+  <div class="bar"><i style="width:11.4%"></i></div>
+  <div class="meta"><span>+13 h 30</span><span><b>+140 %</b></span></div>
+</div>
+<div class="scar">
+  <div class="scar-top"><div class="when">VEN 24 · <em>05h15</em></div><div class="val">8 700 ha</div></div>
+  <div class="bar"><i style="width:20.7%"></i></div>
+  <div class="meta"><span>+7 h 45</span><span><b>+81 %</b></span></div>
+</div>
+<div class="scar">
+  <div class="scar-top"><div class="when">VEN 24 · <em>soir</em><span class="bolt">ORAGE DE FEU 18H20</span></div><div class="val">19 000 ha</div></div>
+  <div class="bar"><i style="width:45.2%"></i></div>
+  <div class="meta"><span>+14 h 15</span><span><b>+118 %</b></span><span>+10 300 ha</span></div>
+</div>
+<div class="scar">
+  <div class="scar-top"><div class="when">SAM 25 · <em>13h00</em></div><div class="val">32 700 ha</div></div>
+  <div class="bar"><i style="width:77.9%"></i></div>
+  <div class="meta"><span>+17 h 30</span><span><b>+72 %</b></span></div>
+</div>
+<div class="scar">
+  <div class="scar-top"><div class="when">DIM 26 · <em>04h00</em><span class="bolt">ORAGE DE FEU 20H</span></div><div class="val">42 000 ha</div></div>
+  <div class="bar"><i style="width:100%"></i></div>
+  <div class="meta"><span>+15 h</span><span><b>+28 %</b></span><span>+9 300 ha</span></div>
+</div>
+
+<div class="note">
+  <strong>+4 100 %</strong> depuis le départ du feu, en 53 heures de mesures.
+  Les deux plus fortes hausses tombent exactement sur les deux orages de feu.
+</div>
+
+<h2>Conditions et risque, jour par jour</h2>
+<div class="sub">Météo : Météociel — AROME (lun→mer) puis ARPEGE (jeu→ven).<br>Score de difficulté et risque d'orage de feu : estimations personnelles, pas des indices officiels.</div>
+
+<div class="day">
+  <div class="day-head"><div class="dname">Ven 24 <small>observé</small></div><div class="risk">orage de feu <b class="hi">65 %</b></div></div>
+  <div class="gauge"><i class="hi-bg" style="width:65%"></i></div>
+  <div class="stats">
+    <span class="chip">T° max <b>37 °C</b></span><span class="chip">humidité <b>~22 %</b></span>
+    <span class="chip">rafales <b>20 km/h</b></span><span class="chip">difficulté <b class="hi">92</b></span>
+  </div>
+  <div class="proj">Survenu à 18h20 · <b>+10 300 ha</b></div>
+</div>
+<div class="day">
+  <div class="day-head"><div class="dname">Sam 25 <small>observé</small></div><div class="risk">orage de feu <b class="hi">55 %</b></div></div>
+  <div class="gauge"><i class="hi-bg" style="width:55%"></i></div>
+  <div class="stats">
+    <span class="chip">T° max <b>30 °C</b></span><span class="chip">humidité <b>~35 %</b></span>
+    <span class="chip">rafales <b>60 km/h</b></span><span class="chip">difficulté <b class="hi">85</b></span>
+  </div>
+  <div class="proj">Survenu à 20h00 · <b>+9 300 ha</b></div>
+</div>
+<div class="day">
+  <div class="day-head"><div class="dname">Dim 26 <small>observé</small></div><div class="risk">orage de feu <b class="lo">0 %</b></div></div>
+  <div class="gauge"><i class="lo-bg" style="width:3%"></i></div>
+  <div class="stats">
+    <span class="chip">T° max <b>25 °C</b></span><span class="chip">humidité <b>haute</b></span>
+    <span class="chip">pluie fine</span><span class="chip">difficulté <b class="lo">25</b></span>
+  </div>
+  <div class="proj">Aucune progression · <b>0 ha</b></div>
+</div>
+<div class="day">
+  <div class="day-head"><div class="dname">Lun 27 <small>en cours</small></div><div class="risk">orage de feu <b class="lo">5 %</b></div></div>
+  <div class="gauge"><i class="lo-bg" style="width:5%"></i></div>
+  <div class="stats">
+    <span class="chip">T° max <b>28 °C</b></span><span class="chip">humidité <b>36 %</b></span>
+    <span class="chip">rafales <b>25 km/h</b></span><span class="chip">difficulté <b class="lo">50</b></span>
+  </div>
+  <div class="proj">Reprise à Claouey · projection <b>42 000 – 44 000 ha</b></div>
+</div>
+<div class="day">
+  <div class="day-head"><div class="dname">Mar 28</div><div class="risk">orage de feu <b class="mid">25 %</b></div></div>
+  <div class="gauge"><i class="mid-bg" style="width:25%"></i></div>
+  <div class="stats">
+    <span class="chip">T° max <b>35 °C</b></span><span class="chip">humidité <b>24 %</b></span>
+    <span class="chip">rafales <b>25 km/h</b></span><span class="chip">difficulté <b class="mid">75</b></span>
+  </div>
+  <div class="proj">Projection <b>45 000 – 50 000 ha</b></div>
+</div>
+<div class="day">
+  <div class="day-head"><div class="dname">Mer 29 <small>fenêtre 16h–21h</small></div><div class="risk">orage de feu <b class="hi">55 %</b></div></div>
+  <div class="gauge"><i class="hi-bg" style="width:55%"></i></div>
+  <div class="stats">
+    <span class="chip">T° max <b>40 °C</b></span><span class="chip">humidité <b>19 %</b></span>
+    <span class="chip">rafales <b>40 km/h</b></span><span class="chip">difficulté <b class="hi">98</b></span>
+  </div>
+  <div class="proj">Projection <b>50 000 – 65 000 ha</b></div>
+</div>
+<div class="day">
+  <div class="day-head"><div class="dname">Jeu 30 <small>pluie</small></div><div class="risk">orage de feu <b class="lo">&lt;5 %</b></div></div>
+  <div class="gauge"><i class="lo-bg" style="width:4%"></i></div>
+  <div class="stats">
+    <span class="chip">T° max <b>29 °C</b></span><span class="chip">humidité <b>45 %</b></span>
+    <span class="chip">rafales <b>40 km/h</b></span><span class="chip">difficulté <b class="lo">55</b></span>
+  </div>
+  <div class="proj">Meilleure fenêtre pour fixer le feu · <b>51 000 – 66 000 ha</b></div>
+</div>
+<div class="day">
+  <div class="day-head"><div class="dname">Ven 31</div><div class="risk">orage de feu <b class="lo">10 %</b></div></div>
+  <div class="gauge"><i class="mid-bg" style="width:10%"></i></div>
+  <div class="stats">
+    <span class="chip">T° max <b>31 °C</b></span><span class="chip">humidité <b>36 %</b></span>
+    <span class="chip">rafales <b>30 km/h</b></span><span class="chip">difficulté <b class="mid">65</b></span>
+  </div>
+  <div class="proj">Projection <b>52 000 – 68 000 ha</b></div>
+</div>
+
+<div class="note warn">
+  <strong>Estimation centrale : ~55 000 ha en fin de semaine.</strong>
+  Mercredi est le seul jour qui réunit les trois conditions observées lors des deux orages de feu — chaleur ≥ 35 °C, humidité ≤ 25 %, instabilité en fin d'après-midi — et il les dépasse.
+</div>
+<div class="note">
+  <strong>Comment le risque est calculé.</strong> Le feu ne grandit pas régulièrement : il stagne, puis saute de ~10 000 ha en une soirée quand un pyrocumulonimbus se forme. Les pourcentages comparent chaque journée aux conditions relevées les 24 et 25 juillet, qui servent de calibrage.
+</div>
+<div class="note">
+  <strong>Ce qui limite la casse.</strong> Le feu bute déjà sur l'océan et le bassin d'Arcachon à l'ouest, et il ne progresse plus sur le flanc ouest de la métropole. S'il passe mercredi soir sans orage de feu, la pluie de jeudi offre une vraie fenêtre pour le fixer autour de 50 000 ha.
+</div>
+<div class="note">
+  <strong>Repère.</strong> L'incendie des Landes de Gascogne de 1949 a parcouru 52 000 ha et fait 82 morts. Sur le scénario central, ce record tombe mercredi ou jeudi.
+</div>
+
+<footer>
+  <b>Surfaces et moyens</b> — préfecture de la Gironde, ministère de l'Intérieur, points de situation du 22 au 27 juillet 2026.<br>
+  <b>Météo</b> — Météociel, modèles AROME et ARPEGE, station Bordeaux.<br>
+  <b>Projections et risques</b> — estimations personnelles à partir du comportement observé du feu. Aucune valeur officielle.
+</footer>
+
+</div>
+</body>
+</html>
