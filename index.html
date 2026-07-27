@@ -236,9 +236,27 @@
   .fg-stats-row b{color:var(--accent);font-family:'Oswald',sans-serif;font-weight:500;font-size:14px}
 
   /* ── responsive ── */
+  @media(max-width:900px){
+    /* tables → stacked cards, so nothing sits off-screen behind a horizontal scroll */
+    .table-wrap{overflow-x:visible;border:none;background:transparent}
+    #progression table,#previsions table{min-width:0}
+    table{display:block;width:100%}
+    thead{display:none}
+    tbody{display:block}
+    tbody tr{display:block;border:1px solid var(--line);border-radius:4px;padding:14px 16px;margin-bottom:10px;background:var(--panel)}
+    tbody tr:last-child{margin-bottom:0}
+    tr.peak-row{background:rgba(232,84,31,.08)}
+    td{display:block;padding:7px 0;text-align:left!important;white-space:normal!important;min-width:0!important}
+    td:empty{display:none;padding:0}
+    td::before{content:attr(data-label);display:block;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--smoke);margin-bottom:4px}
+  }
   @media(max-width:860px){
     h1{font-size:52px}
     .hero{grid-template-columns:1fr;align-items:start}
+  }
+  @media(max-width:560px){
+    .stat-grid{grid-template-columns:repeat(2,1fr)}
+    .brand-tag{display:none}
   }
   @media(max-width:480px){
     h1{font-size:38px}
@@ -411,60 +429,60 @@
       </thead>
       <tbody>
         <tr>
-          <td class="p-day"><b>Mer 22</b> <span>~23h00</span></td>
-          <td class="r p-surface">1 000 <small>ha</small></td>
-          <td class="p-bar-cell"><div class="bar-track"><span class="bar-fill" style="width:2.4%"></span></div></td>
-          <td class="r p-gap">—</td>
-          <td class="r p-delta">—</td>
-          <td><span class="p-event">Départ du feu</span></td>
+          <td class="p-day" data-label="Moment"><b>Mer 22</b> <span>~23h00</span></td>
+          <td class="r p-surface" data-label="Surface">1 000 <small>ha</small></td>
+          <td class="p-bar-cell" data-label="Cumul"><div class="bar-track"><span class="bar-fill" style="width:2.4%"></span></div></td>
+          <td class="r p-gap" data-label="Écart">—</td>
+          <td class="r p-delta" data-label="Δ">—</td>
+          <td data-label="Événement"><span class="p-event">Départ du feu</span></td>
         </tr>
         <tr>
-          <td class="p-day"><b>Jeu 23</b> <span>matin</span></td>
-          <td class="r p-surface">2 000 <small>ha</small></td>
-          <td class="p-bar-cell"><div class="bar-track"><span class="bar-fill" style="width:4.8%"></span></div></td>
-          <td class="r p-gap">+9 h</td>
-          <td class="r p-delta">+100 %</td>
+          <td class="p-day" data-label="Moment"><b>Jeu 23</b> <span>matin</span></td>
+          <td class="r p-surface" data-label="Surface">2 000 <small>ha</small></td>
+          <td class="p-bar-cell" data-label="Cumul"><div class="bar-track"><span class="bar-fill" style="width:4.8%"></span></div></td>
+          <td class="r p-gap" data-label="Écart">+9 h</td>
+          <td class="r p-delta" data-label="Δ">+100 %</td>
           <td></td>
         </tr>
         <tr>
-          <td class="p-day"><b>Jeu 23</b> <span>21h30</span></td>
-          <td class="r p-surface">4 800 <small>ha</small></td>
-          <td class="p-bar-cell"><div class="bar-track"><span class="bar-fill" style="width:11.4%"></span></div></td>
-          <td class="r p-gap">+13 h 30</td>
-          <td class="r p-delta">+140 %</td>
+          <td class="p-day" data-label="Moment"><b>Jeu 23</b> <span>21h30</span></td>
+          <td class="r p-surface" data-label="Surface">4 800 <small>ha</small></td>
+          <td class="p-bar-cell" data-label="Cumul"><div class="bar-track"><span class="bar-fill" style="width:11.4%"></span></div></td>
+          <td class="r p-gap" data-label="Écart">+13 h 30</td>
+          <td class="r p-delta" data-label="Δ">+140 %</td>
           <td></td>
         </tr>
         <tr>
-          <td class="p-day"><b>Ven 24</b> <span>05h15</span></td>
-          <td class="r p-surface">8 700 <small>ha</small></td>
-          <td class="p-bar-cell"><div class="bar-track"><span class="bar-fill" style="width:20.7%"></span></div></td>
-          <td class="r p-gap">+7 h 45</td>
-          <td class="r p-delta">+81 %</td>
+          <td class="p-day" data-label="Moment"><b>Ven 24</b> <span>05h15</span></td>
+          <td class="r p-surface" data-label="Surface">8 700 <small>ha</small></td>
+          <td class="p-bar-cell" data-label="Cumul"><div class="bar-track"><span class="bar-fill" style="width:20.7%"></span></div></td>
+          <td class="r p-gap" data-label="Écart">+7 h 45</td>
+          <td class="r p-delta" data-label="Δ">+81 %</td>
           <td></td>
         </tr>
         <tr>
-          <td class="p-day"><b>Ven 24</b> <span>soir</span></td>
-          <td class="r p-surface">19 000 <small>ha</small></td>
-          <td class="p-bar-cell"><div class="bar-track"><span class="bar-fill" style="width:45.2%"></span></div></td>
-          <td class="r p-gap">+14 h 15</td>
-          <td class="r p-delta">+118 %</td>
-          <td><span class="bolt">Orage de feu 18h20</span><span class="p-event">+10 300 ha</span></td>
+          <td class="p-day" data-label="Moment"><b>Ven 24</b> <span>soir</span></td>
+          <td class="r p-surface" data-label="Surface">19 000 <small>ha</small></td>
+          <td class="p-bar-cell" data-label="Cumul"><div class="bar-track"><span class="bar-fill" style="width:45.2%"></span></div></td>
+          <td class="r p-gap" data-label="Écart">+14 h 15</td>
+          <td class="r p-delta" data-label="Δ">+118 %</td>
+          <td data-label="Événement"><span class="bolt">Orage de feu 18h20</span><span class="p-event">+10 300 ha</span></td>
         </tr>
         <tr>
-          <td class="p-day"><b>Sam 25</b> <span>13h00</span></td>
-          <td class="r p-surface">32 700 <small>ha</small></td>
-          <td class="p-bar-cell"><div class="bar-track"><span class="bar-fill" style="width:77.9%"></span></div></td>
-          <td class="r p-gap">+17 h 30</td>
-          <td class="r p-delta">+72 %</td>
+          <td class="p-day" data-label="Moment"><b>Sam 25</b> <span>13h00</span></td>
+          <td class="r p-surface" data-label="Surface">32 700 <small>ha</small></td>
+          <td class="p-bar-cell" data-label="Cumul"><div class="bar-track"><span class="bar-fill" style="width:77.9%"></span></div></td>
+          <td class="r p-gap" data-label="Écart">+17 h 30</td>
+          <td class="r p-delta" data-label="Δ">+72 %</td>
           <td></td>
         </tr>
         <tr>
-          <td class="p-day"><b>Dim 26</b> <span>04h00</span></td>
-          <td class="r p-surface">42 000 <small>ha</small></td>
-          <td class="p-bar-cell"><div class="bar-track"><span class="bar-fill" style="width:100%"></span></div></td>
-          <td class="r p-gap">+15 h</td>
-          <td class="r p-delta">+28 %</td>
-          <td><span class="bolt">Orage de feu 20h</span><span class="p-event">+9 300 ha</span></td>
+          <td class="p-day" data-label="Moment"><b>Dim 26</b> <span>04h00</span></td>
+          <td class="r p-surface" data-label="Surface">42 000 <small>ha</small></td>
+          <td class="p-bar-cell" data-label="Cumul"><div class="bar-track"><span class="bar-fill" style="width:100%"></span></div></td>
+          <td class="r p-gap" data-label="Écart">+15 h</td>
+          <td class="r p-delta" data-label="Δ">+28 %</td>
+          <td data-label="Événement"><span class="bolt">Orage de feu 20h</span><span class="p-event">+9 300 ha</span></td>
         </tr>
       </tbody>
     </table>
@@ -499,84 +517,84 @@
       </thead>
       <tbody>
         <tr>
-          <td class="c-day"><b>Ven 24</b></td>
-          <td><span class="c-statut">Observé</span></td>
-          <td class="r c-tmax">37 °C</td>
-          <td class="r c-num">~22 %</td>
-          <td class="r c-num">20 km/h</td>
-          <td class="r c-diff hi">92</td>
-          <td class="orage"><div class="risk-cell"><div class="risk-track"><span class="risk-fill hi" style="width:65%"></span></div><span class="risk-label hi">65 %</span></div></td>
-          <td class="c-proj">Survenu à 18h20 · +10 300 ha</td>
+          <td class="c-day" data-label="Jour"><b>Ven 24</b></td>
+          <td data-label="Statut"><span class="c-statut">Observé</span></td>
+          <td class="r c-tmax" data-label="T° max">37 °C</td>
+          <td class="r c-num" data-label="Humidité">~22 %</td>
+          <td class="r c-num" data-label="Rafales">20 km/h</td>
+          <td class="r c-diff hi" data-label="Difficulté">92</td>
+          <td class="orage" data-label="Orage de feu"><div class="risk-cell"><div class="risk-track"><span class="risk-fill hi" style="width:65%"></span></div><span class="risk-label hi">65 %</span></div></td>
+          <td class="c-proj" data-label="Trajectoire">Survenu à 18h20 · +10 300 ha</td>
         </tr>
         <tr>
-          <td class="c-day"><b>Sam 25</b></td>
-          <td><span class="c-statut">Observé</span></td>
-          <td class="r c-tmax">30 °C</td>
-          <td class="r c-num">~35 %</td>
-          <td class="r c-num">60 km/h</td>
-          <td class="r c-diff hi">85</td>
-          <td class="orage"><div class="risk-cell"><div class="risk-track"><span class="risk-fill hi" style="width:55%"></span></div><span class="risk-label hi">55 %</span></div></td>
-          <td class="c-proj">Survenu à 20h00 · +9 300 ha</td>
+          <td class="c-day" data-label="Jour"><b>Sam 25</b></td>
+          <td data-label="Statut"><span class="c-statut">Observé</span></td>
+          <td class="r c-tmax" data-label="T° max">30 °C</td>
+          <td class="r c-num" data-label="Humidité">~35 %</td>
+          <td class="r c-num" data-label="Rafales">60 km/h</td>
+          <td class="r c-diff hi" data-label="Difficulté">85</td>
+          <td class="orage" data-label="Orage de feu"><div class="risk-cell"><div class="risk-track"><span class="risk-fill hi" style="width:55%"></span></div><span class="risk-label hi">55 %</span></div></td>
+          <td class="c-proj" data-label="Trajectoire">Survenu à 20h00 · +9 300 ha</td>
         </tr>
         <tr>
-          <td class="c-day"><b>Dim 26</b></td>
-          <td><span class="c-statut">Observé</span></td>
-          <td class="r c-tmax">25 °C</td>
-          <td class="r c-num">haute</td>
-          <td class="r c-num">—</td>
-          <td class="r c-diff lo">25</td>
-          <td class="orage"><div class="risk-cell"><div class="risk-track"><span class="risk-fill lo" style="width:3%"></span></div><span class="risk-label lo">0 %</span></div></td>
-          <td class="c-proj">Pluie fine · aucune progression · 0 ha</td>
+          <td class="c-day" data-label="Jour"><b>Dim 26</b></td>
+          <td data-label="Statut"><span class="c-statut">Observé</span></td>
+          <td class="r c-tmax" data-label="T° max">25 °C</td>
+          <td class="r c-num" data-label="Humidité">haute</td>
+          <td class="r c-num" data-label="Rafales">—</td>
+          <td class="r c-diff lo" data-label="Difficulté">25</td>
+          <td class="orage" data-label="Orage de feu"><div class="risk-cell"><div class="risk-track"><span class="risk-fill lo" style="width:3%"></span></div><span class="risk-label lo">0 %</span></div></td>
+          <td class="c-proj" data-label="Trajectoire">Pluie fine · aucune progression · 0 ha</td>
         </tr>
         <tr>
-          <td class="c-day"><b>Lun 27</b></td>
-          <td><span class="c-statut current">En cours</span></td>
-          <td class="r c-tmax">28 °C</td>
-          <td class="r c-num">36 %</td>
-          <td class="r c-num">25 km/h</td>
-          <td class="r c-diff lo">50</td>
-          <td class="orage"><div class="risk-cell"><div class="risk-track"><span class="risk-fill lo" style="width:5%"></span></div><span class="risk-label lo">5 %</span></div></td>
-          <td class="c-proj">Reprise à Claouey · 42 000 – 44 000 ha</td>
+          <td class="c-day" data-label="Jour"><b>Lun 27</b></td>
+          <td data-label="Statut"><span class="c-statut current">En cours</span></td>
+          <td class="r c-tmax" data-label="T° max">28 °C</td>
+          <td class="r c-num" data-label="Humidité">36 %</td>
+          <td class="r c-num" data-label="Rafales">25 km/h</td>
+          <td class="r c-diff lo" data-label="Difficulté">50</td>
+          <td class="orage" data-label="Orage de feu"><div class="risk-cell"><div class="risk-track"><span class="risk-fill lo" style="width:5%"></span></div><span class="risk-label lo">5 %</span></div></td>
+          <td class="c-proj" data-label="Trajectoire">Reprise à Claouey · 42 000 – 44 000 ha</td>
         </tr>
         <tr>
-          <td class="c-day"><b>Mar 28</b></td>
-          <td><span class="c-statut">Prévision · MàJ AROME</span></td>
-          <td class="r c-tmax">36 °C</td>
-          <td class="r c-num">23 %</td>
-          <td class="r c-num">25 km/h</td>
-          <td class="r c-diff mid">78</td>
-          <td class="orage"><div class="risk-cell"><div class="risk-track"><span class="risk-fill mid" style="width:28%"></span></div><span class="risk-label mid">28 %</span></div></td>
-          <td class="c-proj">Projection 46 000 – 51 000 ha</td>
+          <td class="c-day" data-label="Jour"><b>Mar 28</b></td>
+          <td data-label="Statut"><span class="c-statut">Prévision · MàJ AROME</span></td>
+          <td class="r c-tmax" data-label="T° max">36 °C</td>
+          <td class="r c-num" data-label="Humidité">23 %</td>
+          <td class="r c-num" data-label="Rafales">25 km/h</td>
+          <td class="r c-diff mid" data-label="Difficulté">78</td>
+          <td class="orage" data-label="Orage de feu"><div class="risk-cell"><div class="risk-track"><span class="risk-fill mid" style="width:28%"></span></div><span class="risk-label mid">28 %</span></div></td>
+          <td class="c-proj" data-label="Trajectoire">Projection 46 000 – 51 000 ha</td>
         </tr>
         <tr class="peak-row">
-          <td class="c-day"><b>Mer 29</b></td>
-          <td><span class="c-statut">Fenêtre 16h–20h · MàJ AROME</span></td>
-          <td class="r c-tmax">40 °C</td>
-          <td class="r c-num">20 %</td>
-          <td class="r c-num">40 km/h</td>
-          <td class="r c-diff hi">98</td>
-          <td class="orage"><div class="risk-cell"><div class="risk-track"><span class="risk-fill hi" style="width:55%"></span></div><span class="risk-label hi">55 %</span></div></td>
-          <td class="c-proj">Projection 50 000 – 65 000 ha</td>
+          <td class="c-day" data-label="Jour"><b>Mer 29</b></td>
+          <td data-label="Statut"><span class="c-statut">Fenêtre 16h–20h · MàJ AROME</span></td>
+          <td class="r c-tmax" data-label="T° max">40 °C</td>
+          <td class="r c-num" data-label="Humidité">20 %</td>
+          <td class="r c-num" data-label="Rafales">40 km/h</td>
+          <td class="r c-diff hi" data-label="Difficulté">98</td>
+          <td class="orage" data-label="Orage de feu"><div class="risk-cell"><div class="risk-track"><span class="risk-fill hi" style="width:55%"></span></div><span class="risk-label hi">55 %</span></div></td>
+          <td class="c-proj" data-label="Trajectoire">Projection 50 000 – 65 000 ha</td>
         </tr>
         <tr>
-          <td class="c-day"><b>Jeu 30</b></td>
-          <td><span class="c-statut">Pluie</span></td>
-          <td class="r c-tmax">29 °C</td>
-          <td class="r c-num">45 %</td>
-          <td class="r c-num">40 km/h</td>
-          <td class="r c-diff lo">55</td>
-          <td class="orage"><div class="risk-cell"><div class="risk-track"><span class="risk-fill lo" style="width:4%"></span></div><span class="risk-label lo">&lt;5 %</span></div></td>
-          <td class="c-proj">Meilleure fenêtre pour fixer · 51 000 – 66 000 ha</td>
+          <td class="c-day" data-label="Jour"><b>Jeu 30</b></td>
+          <td data-label="Statut"><span class="c-statut">Pluie</span></td>
+          <td class="r c-tmax" data-label="T° max">29 °C</td>
+          <td class="r c-num" data-label="Humidité">45 %</td>
+          <td class="r c-num" data-label="Rafales">40 km/h</td>
+          <td class="r c-diff lo" data-label="Difficulté">55</td>
+          <td class="orage" data-label="Orage de feu"><div class="risk-cell"><div class="risk-track"><span class="risk-fill lo" style="width:4%"></span></div><span class="risk-label lo">&lt;5 %</span></div></td>
+          <td class="c-proj" data-label="Trajectoire">Meilleure fenêtre pour fixer · 51 000 – 66 000 ha</td>
         </tr>
         <tr>
-          <td class="c-day"><b>Ven 31</b></td>
-          <td><span class="c-statut">Prévision</span></td>
-          <td class="r c-tmax">31 °C</td>
-          <td class="r c-num">36 %</td>
-          <td class="r c-num">30 km/h</td>
-          <td class="r c-diff mid">65</td>
-          <td class="orage"><div class="risk-cell"><div class="risk-track"><span class="risk-fill mid" style="width:10%"></span></div><span class="risk-label mid">10 %</span></div></td>
-          <td class="c-proj">Projection 52 000 – 68 000 ha</td>
+          <td class="c-day" data-label="Jour"><b>Ven 31</b></td>
+          <td data-label="Statut"><span class="c-statut">Prévision</span></td>
+          <td class="r c-tmax" data-label="T° max">31 °C</td>
+          <td class="r c-num" data-label="Humidité">36 %</td>
+          <td class="r c-num" data-label="Rafales">30 km/h</td>
+          <td class="r c-diff mid" data-label="Difficulté">65</td>
+          <td class="orage" data-label="Orage de feu"><div class="risk-cell"><div class="risk-track"><span class="risk-fill mid" style="width:10%"></span></div><span class="risk-label mid">10 %</span></div></td>
+          <td class="c-proj" data-label="Trajectoire">Projection 52 000 – 68 000 ha</td>
         </tr>
       </tbody>
     </table>
