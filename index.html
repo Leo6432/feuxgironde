@@ -253,6 +253,9 @@
   @media(max-width:860px){
     h1{font-size:52px}
     .hero{grid-template-columns:1fr;align-items:start}
+    .nav-links{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;max-width:100%}
+    .nav-links::-webkit-scrollbar{display:none}
+    .nav-links a{flex-shrink:0}
   }
   @media(max-width:560px){
     .stat-grid{grid-template-columns:repeat(2,1fr)}
