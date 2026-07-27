@@ -227,6 +227,14 @@
   .footer-inner div{color:var(--ash);margin-bottom:4px}
   .footer-inner div:last-child{margin-bottom:0}
 
+  /* ── hidden visitor stats ── */
+  #fg-stats-btn{position:fixed;bottom:10px;right:10px;width:10px;height:10px;padding:0;border:none;border-radius:50%;background:var(--line);opacity:.4;cursor:pointer;z-index:40;transition:opacity .15s,background .15s}
+  #fg-stats-btn:hover{opacity:1;background:var(--accent)}
+  #fg-stats-panel{position:fixed;bottom:28px;right:10px;z-index:40;background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:12px 14px;font-family:'IBM Plex Mono',monospace;font-size:11px;min-width:160px;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+  #fg-stats-panel[hidden]{display:none}
+  .fg-stats-row{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:3px 0;color:var(--ash)}
+  .fg-stats-row b{color:var(--accent);font-family:'Oswald',sans-serif;font-weight:500;font-size:14px}
+
   /* ── responsive ── */
   @media(max-width:860px){
     h1{font-size:52px}
@@ -609,6 +617,52 @@
     <div>Projections et risques — estimations personnelles à partir du comportement observé du feu. Aucune valeur officielle.</div>
   </div>
 </footer>
+
+<button id="fg-stats-btn" aria-label="Statistiques de visite"></button>
+<div id="fg-stats-panel" hidden>
+  <div class="fg-stats-row"><span>En direct</span><b id="fg-s-live">—</b></div>
+  <div class="fg-stats-row"><span>24 heures</span><b id="fg-s-24h">—</b></div>
+  <div class="fg-stats-row"><span>7 jours</span><b id="fg-s-7d">—</b></div>
+  <div class="fg-stats-row"><span>Depuis toujours</span><b id="fg-s-all">—</b></div>
+</div>
+<script>
+(function(){
+  var KEY='fg_vid';
+  var id=localStorage.getItem(KEY);
+  if(!id){
+    id=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():('v'+Date.now()+Math.random().toString(16).slice(2));
+    localStorage.setItem(KEY,id);
+  }
+  function ping(){
+    fetch('/api/ping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})}).catch(function(){});
+  }
+  ping();
+  setInterval(ping,40000);
+
+  var btn=document.getElementById('fg-stats-btn');
+  var panel=document.getElementById('fg-stats-panel');
+  var poll=null;
+  function fmt(n){ return (n===null||n===undefined)?'—':n.toLocaleString('fr-FR'); }
+  function refresh(){
+    fetch('/api/stats').then(function(r){return r.json();}).then(function(d){
+      document.getElementById('fg-s-live').textContent=fmt(d.live);
+      document.getElementById('fg-s-24h').textContent=fmt(d.last24h);
+      document.getElementById('fg-s-7d').textContent=fmt(d.last7d);
+      document.getElementById('fg-s-all').textContent=fmt(d.allTime);
+    }).catch(function(){});
+  }
+  btn.addEventListener('click',function(){
+    if(panel.hasAttribute('hidden')){
+      panel.removeAttribute('hidden');
+      refresh();
+      poll=setInterval(refresh,10000);
+    } else {
+      panel.setAttribute('hidden','');
+      if(poll){ clearInterval(poll); poll=null; }
+    }
+  });
+})();
+</script>
 
 </body>
 </html>
