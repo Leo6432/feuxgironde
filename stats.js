@@ -13,6 +13,59 @@
   });
 })();
 
+// Données météo à jour : si /api/meteo répond, on remplace les scores
+// figés du tableau par ceux recalculés sur le dernier run Open-Meteo,
+// avec la CAPE réelle. En cas d'échec le tableau statique reste en place :
+// c'est un enrichissement, jamais une dépendance.
+(function () {
+  // Le tableau des prévisions est le seul à porter des lignes datées.
+  var table = document.querySelector('table tr[data-date]') &&
+              document.querySelector('table tr[data-date]').closest('table');
+  if (!table) return;
+
+  function niveau(s) { return s >= 75 ? 'hi' : (s >= 55 ? 'mid' : 'lo'); }
+
+  function poser(el, score) {
+    if (!el) return;
+    el.textContent = score;
+    el.classList.remove('lvl-lo', 'lvl-mid', 'lvl-hi');
+    el.classList.add('lvl-' + niveau(score));
+  }
+
+  fetch('/api/meteo')
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d || !d.ok || !Array.isArray(d.jours)) return;
+      var maj = 0;
+
+      d.jours.forEach(function (j) {
+        var ligne = table.querySelector('tr[data-date="' + j.date + '"] .js-diff');
+        if (ligne) { poser(ligne, j.score); maj++; }
+
+        var detail = table.querySelector('tr.day-detail[data-date="' + j.date + '"]');
+        if (!detail || !j.periodes) return;
+        var cartes = detail.querySelectorAll('.periode');
+        j.periodes.forEach(function (p, k) {
+          var c = cartes[k];
+          if (!c) return;
+          poser(c.querySelector('.p-score'), p.score);
+          var meta = c.querySelector('.p-meta');
+          if (meta) meta.textContent = Math.round(p.t) + ' °C · ' + Math.round(p.hum) + ' % · ' + Math.round(p.raf) + ' km/h';
+          var pic = c.querySelector('.p-pic');
+          if (pic) pic.textContent = 'pic à ' + p.heure + 'h';
+        });
+      });
+
+      if (!maj) return;
+      var marque = document.getElementById('fg-live');
+      if (marque) {
+        marque.hidden = false;
+        marque.textContent = 'Scores recalculés à l’instant — ' + d.source + ' · instabilité : ' + d.instabilite + '.';
+      }
+    })
+    .catch(function () { /* le tableau statique fait foi */ });
+})();
+
 // Compteur de visites : signale la présence du visiteur et affiche
 // les totaux dans le petit panneau discret en bas à droite.
 (function () {

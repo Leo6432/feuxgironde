@@ -177,6 +177,14 @@ td{padding:18px 20px;vertical-align:middle}
 .risk .bar i.mid{background:var(--amber)}
 .risk .bar i.hi{background:var(--red)}
 
+.live-note{
+  display:flex;align-items:center;gap:9px;
+  background:var(--green-tint);border:1px solid #BFE0CE;border-radius:var(--radius);
+  padding:11px 15px;margin:0 0 22px;font-size:14.5px;color:#14603A;
+}
+.live-note[hidden]{display:none}
+.live-note::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0}
+
 /* ── lignes de jour dépliables ─────────────────────────── */
 .day-toggle{
   display:flex;align-items:center;gap:9px;flex-wrap:wrap;
