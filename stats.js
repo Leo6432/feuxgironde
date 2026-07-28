@@ -79,6 +79,38 @@
     .catch(function () { /* le tableau statique fait foi */ });
 })();
 
+// Foyers actifs (NASA FIRMS) : présent seulement sur l'accueil. Comme pour
+// la météo, un échec laisse le message d'attente en place sans rien casser.
+(function () {
+  var note = document.getElementById('fg-firms');
+  if (!note) return;
+
+  fetch('/api/firms')
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d || !d.ok) {
+        note.textContent = 'Détections satellite indisponibles pour le moment.';
+        return;
+      }
+      note.classList.remove('stale');
+      note.textContent = d.total
+        ? d.total + ' foyer' + (d.total > 1 ? 's' : '') + ' détecté' + (d.total > 1 ? 's' : '') + ' par ' + d.source + ', ' + d.fenetre + '.'
+        : 'Aucun foyer actif détecté par ' + d.source + ' dans les ' + d.fenetre + '.';
+
+      var resume = document.getElementById('fg-firms-summary');
+      if (resume) resume.removeAttribute('hidden');
+      var total = document.getElementById('fg-firms-total');
+      if (total) total.textContent = d.total;
+      var frp = document.getElementById('fg-firms-frp');
+      if (frp) frp.textContent = d.frpMax ? Math.round(d.frpMax) + ' MW' : '—';
+      var derniere = document.getElementById('fg-firms-derniere');
+      if (derniere) derniere.textContent = d.derniereDetection || '—';
+    })
+    .catch(function () {
+      note.textContent = 'Détections satellite indisponibles pour le moment.';
+    });
+})();
+
 // Compteur de visites : signale la présence du visiteur et affiche
 // les totaux dans le petit panneau discret en bas à droite.
 (function () {
