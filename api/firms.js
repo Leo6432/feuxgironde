@@ -13,10 +13,11 @@
 const LAT = 44.98;   // Saumos, Gironde
 const LON = -1.02;
 
-// Boîte assez large pour couvrir le feu et Lacanau, sans remonter jusqu'à
-// Bordeaux ni le bassin d'Arcachon (pour éviter le bruit d'autres sources
-// de chaleur détectées par les satellites).
-const BBOX = '-1.5,44.6,-0.55,45.35';
+// Resserrée sur le seul corridor Saumos–Lacanau : à la taille précédente,
+// la boîte englobait Bordeaux et le bassin d'Arcachon, deux zones sans
+// rapport avec ce feu où d'autres sources de chaleur (urbaines, agricoles,
+// un autre feu de forêt) auraient pu se glisser dans les détections.
+const BBOX = '-1.35,44.80,-0.85,45.20';
 const JOURS = 1;
 
 // Deux satellites VIIRS : leurs passages ne sont pas synchronisés, les
