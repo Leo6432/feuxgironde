@@ -36,7 +36,7 @@ for nom, m in META.items():
             <td class="num t-sub" data-label="Rafales">{max(x[4] for x in __import__('meteo').JOURS[nom]['h'])} km/h</td>
             <td class="num lvl lvl-{niveau(s)} js-diff" data-label="Difficulté">{s}</td>
             <td data-label="Risque d’orage de feu">
-              <div class="risk"><div class="bar"><i class="{m['lvl']}" style="width:{m['risque']}%"></i></div><span class="lvl lvl-{m['lvl']}">{m['risque']} %</span></div>
+              <div class="risk js-risk"><div class="bar"><i class="{m['lvl']}" style="width:{m['risque']}%"></i></div><span class="lvl lvl-{m['lvl']}">{m['risque']} %</span></div>
             </td>
             <td class="t-note" data-label="Projection">{m['proj']}</td>
           </tr>

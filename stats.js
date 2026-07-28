@@ -32,9 +32,57 @@
     el.classList.add('lvl-' + niveau(score));
   }
 
-  fetch('/api/meteo')
+  // Un orage de feu obéit à un effet de seuil, pas à une progression
+  // proportionnelle : sous un certain niveau de conditions, il ne se forme
+  // tout simplement pas. Les deux journées qui en ont produit un notent
+  // ~73 et ~79 sur l'échelle de difficulté ; le dimanche pluvieux, qui n'a
+  // rien donné, note ~36. D'où une courbe en S centrée sur 72.
+  function seuilMeteo(score) {
+    return 1 / (1 + Math.exp(-(score - 72) / 6));
+  }
+
+  // Reste la seconde condition : que le feu dégage assez d'énergie pour
+  // amorcer la colonne convective. FIRMS la mesure (somme des puissances
+  // radiatives du front). Un front éteint ne produit pas de pyrocumulonimbus,
+  // même par 41 °C. Le plafond à 0,85 laisse la part d'incertitude qu'aucune
+  // de ces deux mesures ne couvre.
+  function coefActivite(frpTotal) {
+    var activite = Math.max(0, Math.min(100, (frpTotal / 300) * 100));
+    return 0.40 + 0.0045 * activite;
+  }
+
+  function poserRisque(tr, pct) {
+    var bloc = tr && tr.querySelector('.js-risk');
+    if (!bloc) return;
+    var barre = bloc.querySelector('.bar i');
+    var texte = bloc.querySelector('span');
+    var n = niveau(pct);
+    if (barre) {
+      barre.style.width = pct + '%';
+      barre.classList.remove('lo', 'mid', 'hi');
+      barre.classList.add(n);
+    }
+    if (texte) {
+      texte.textContent = pct + ' %';
+      texte.classList.remove('lvl-lo', 'lvl-mid', 'lvl-hi');
+      texte.classList.add('lvl-' + n);
+    }
+  }
+
+  // FIRMS est facultatif : s'il ne répond pas, les scores météo sont quand
+  // même appliqués et les pourcentages de risque restent ceux du HTML.
+  var activite = fetch('/api/firms')
     .then(function (r) { return r.json(); })
-    .then(function (d) {
+    .then(function (d) { return (d && d.ok && isFinite(d.frpTotal)) ? d : null; })
+    .catch(function () { return null; });
+
+  Promise.all([
+    fetch('/api/meteo').then(function (r) { return r.json(); }),
+    activite,
+  ])
+    .then(function (res) {
+      var d = res[0];
+      var feu = res[1];
       if (!d || !d.ok || !Array.isArray(d.jours)) return;
       var maj = 0;
 
@@ -42,6 +90,14 @@
         var tr = table.querySelector('tr[data-date="' + j.date + '"]');
         var ligne = tr && tr.querySelector('.js-diff');
         if (ligne) { poser(ligne, j.score); maj++; }
+
+        // Le risque combine le score météo du jour et l'activité mesurée du
+        // feu aujourd'hui. Pour les jours à venir, cela revient à supposer
+        // que le front reste aussi actif qu'à la dernière mesure — c'est une
+        // hypothèse, pas une prévision de l'activité du feu.
+        if (tr && feu) {
+          poserRisque(tr, Math.round(seuilMeteo(j.score) * coefActivite(feu.frpTotal) * 100));
+        }
 
         // Les colonnes météo affichées suivent aussi le dernier run : sans
         // ça le tableau montrerait des relevés figés à côté d'un score frais.
@@ -73,7 +129,9 @@
       var marque = document.getElementById('fg-live');
       if (marque) {
         marque.classList.remove('stale');
-        marque.textContent = 'Scores recalculés à l’instant — ' + d.source + ' · instabilité : ' + d.instabilite + '.';
+        marque.textContent = 'Scores recalculés à l’instant — ' + d.source +
+          ' · instabilité : ' + d.instabilite +
+          (feu ? ' · activité du feu : ' + feu.frpTotal + ' MW mesurés par satellite.' : '.');
       }
     })
     .catch(function () { /* le tableau statique fait foi */ });

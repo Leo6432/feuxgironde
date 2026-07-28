@@ -97,7 +97,7 @@
             <td class="num t-sub" data-label="Rafales">25 km/h</td>
             <td class="num lvl lvl-mid js-diff" data-label="Difficulté">65</td>
             <td data-label="Risque d’orage de feu">
-              <div class="risk"><div class="bar"><i class="mid" style="width:40%"></i></div><span class="lvl lvl-mid">40 %</span></div>
+              <div class="risk js-risk"><div class="bar"><i class="mid" style="width:40%"></i></div><span class="lvl lvl-mid">40 %</span></div>
             </td>
             <td class="t-note" data-label="Projection">43 000 ha (confirmé, 20h00)</td>
           </tr>
@@ -144,7 +144,7 @@
             <td class="num t-sub" data-label="Rafales">45 km/h</td>
             <td class="num lvl lvl-hi js-diff" data-label="Difficulté">95</td>
             <td data-label="Risque d’orage de feu">
-              <div class="risk"><div class="bar"><i class="hi" style="width:75%"></i></div><span class="lvl lvl-hi">75 %</span></div>
+              <div class="risk js-risk"><div class="bar"><i class="hi" style="width:75%"></i></div><span class="lvl lvl-hi">75 %</span></div>
             </td>
             <td class="t-note" data-label="Projection">43 000 – 56 000 ha</td>
           </tr>
@@ -191,7 +191,7 @@
             <td class="num t-sub" data-label="Rafales">40 km/h</td>
             <td class="num lvl lvl-mid js-diff" data-label="Difficulté">62</td>
             <td data-label="Risque d’orage de feu">
-              <div class="risk"><div class="bar"><i class="lo" style="width:10%"></i></div><span class="lvl lvl-lo">10 %</span></div>
+              <div class="risk js-risk"><div class="bar"><i class="lo" style="width:10%"></i></div><span class="lvl lvl-lo">10 %</span></div>
             </td>
             <td class="t-note" data-label="Projection">Accalmie, mais toujours aucune pluie · 43 000 – 58 000 ha</td>
           </tr>
@@ -238,7 +238,7 @@
             <td class="num t-sub" data-label="Rafales">35 km/h</td>
             <td class="num lvl lvl-mid js-diff" data-label="Difficulté">62</td>
             <td data-label="Risque d’orage de feu">
-              <div class="risk"><div class="bar"><i class="lo" style="width:8%"></i></div><span class="lvl lvl-lo">8 %</span></div>
+              <div class="risk js-risk"><div class="bar"><i class="lo" style="width:8%"></i></div><span class="lvl lvl-lo">8 %</span></div>
             </td>
             <td class="t-note" data-label="Projection">43 000 – 59 000 ha</td>
           </tr>
@@ -283,8 +283,8 @@
       <p><strong>Toujours aucune pluie annoncée.</strong> Ni jeudi ni vendredi. Jeudi reste une accalmie — 30 °C et 44 % d’humidité — mais avec 40 km/h de rafales en fin de journée et sans la moindre précipitation pour aider à fixer le feu.</p>
     </div>
 
-    <p class="notice" style="margin-top:32px">
-      <strong>Comment lire ce tableau.</strong> La colonne <em>Projection</em> part de la dernière surface confirmée (43 000 ha) : borne basse sans nouvel orage de feu, borne haute avec un saut proche des <strong>10 000 ha</strong> observés les 24 et 25 juillet. Le <em>score de difficulté</em> est recalculé automatiquement sur le dernier run météo ; le <em>pourcentage de risque</em>, lui, reste une appréciation que je révise à la main — les <a href="/#foyers-actifs">détections satellite</a> nourrissent ce jugement mais ne le modifient pas toutes seules. Ni l’un ni l’autre n’est un indice officiel. <a href="/analyse.html">Méthode détaillée et journées de référence</a>.
+    <p class="section-note" style="margin-top:28px">
+      <em>Projection</em> : borne basse sans nouvel orage de feu, borne haute avec un saut proche des 10 000 ha observés les 24 et 25 juillet, à partir des 43 000 ha confirmés. <em>Difficulté</em> et <em>risque</em> sont recalculés automatiquement — le premier sur le dernier run météo, le second en le pondérant par l’activité du feu mesurée par satellite ; les valeurs ci-dessus s’affichent tant que ce calcul n’a pas abouti. Ce ne sont pas des indices officiels. <a href="/analyse.html">Méthode détaillée</a>.
     </p>
   </div>
 </section>

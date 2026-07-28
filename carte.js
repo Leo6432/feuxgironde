@@ -11,6 +11,7 @@
 
   var note = document.getElementById('fg-carte-note');
   var SAUMOS = [44.98, -1.02];
+  var JOURS = 7;
 
   function echec(message) {
     if (note) note.textContent = message;
@@ -26,6 +27,12 @@
 
   function rayon(frp) {
     return Math.max(6, Math.min(20, 6 + Math.sqrt(frp || 0) * 2));
+  }
+
+  function jourFr(iso) {
+    var d = new Date(iso + 'T12:00:00');
+    if (isNaN(d)) return iso;
+    return d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
   }
 
   function attendreLeaflet(essais, suite) {
@@ -45,7 +52,44 @@
     // Repère fixe : sans lui, une carte sans détection n'a aucun point d'ancrage.
     L.marker(SAUMOS).addTo(carte).bindPopup('<strong>Saumos</strong><br>Départ du feu, 22 juillet');
 
-    fetch('/api/firms')
+    // Les foyers vivent dans leur propre calque : changer de jour se résume
+    // à le vider et le re-remplir, sans toucher au fond de carte.
+    var calque = L.layerGroup().addTo(carte);
+
+    function dessiner(points, recadrer) {
+      calque.clearLayers();
+      var coords = [];
+      points.forEach(function (p) {
+        if (!isFinite(p.lat) || !isFinite(p.lon)) return;
+        L.circleMarker([p.lat, p.lon], {
+          radius: rayon(p.frp),
+          color: couleur(p.frp),
+          fillColor: couleur(p.frp),
+          fillOpacity: 0.45,
+          weight: 2,
+        }).bindPopup(
+          '<strong>' + (p.frp ? Math.round(p.frp) + ' MW' : 'puissance inconnue') + '</strong><br>' +
+          p.date + ' à ' + p.heure + ' UTC<br>' +
+          'à ' + p.distanceKm + ' km de Saumos'
+        ).addTo(calque);
+        coords.push([p.lat, p.lon]);
+      });
+      if (recadrer && coords.length) {
+        coords.push(SAUMOS);
+        carte.fitBounds(L.latLngBounds(coords).pad(0.2));
+      }
+    }
+
+    function chiffres(total, frpMax, derniere) {
+      var t = document.getElementById('fg-carte-total');
+      if (t) t.textContent = total;
+      var f = document.getElementById('fg-carte-frp');
+      if (f) f.textContent = frpMax ? Math.round(frpMax) + ' MW' : '—';
+      var d = document.getElementById('fg-carte-derniere');
+      if (d) d.textContent = derniere || '—';
+    }
+
+    fetch('/api/firms?jours=' + JOURS)
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d || !d.ok) {
@@ -56,42 +100,54 @@
         if (note) {
           note.classList.remove('stale');
           note.textContent = d.total
-            ? d.total + ' foyer' + (d.total > 1 ? 's' : '') + ' détecté' + (d.total > 1 ? 's' : '') + ' — ' + d.source + ', ' + d.fenetre + '.'
-            : 'Aucun foyer détecté par ' + d.source + ' sur ' + d.fenetre + '.';
+            ? d.total + ' détection' + (d.total > 1 ? 's' : '') + ' sur ' + d.fenetre + ' — ' + d.source + '.'
+            : 'Aucune détection par ' + d.source + ' sur ' + d.fenetre + '.';
         }
 
-        var total = document.getElementById('fg-carte-total');
-        if (total) total.textContent = d.total;
-        var frp = document.getElementById('fg-carte-frp');
-        if (frp) frp.textContent = d.frpMax ? Math.round(d.frpMax) + ' MW' : '—';
-        var derniere = document.getElementById('fg-carte-derniere');
-        if (derniere) derniere.textContent = d.derniereDetection || '—';
+        chiffres(d.total, d.frpMax, d.derniereDetection);
+        dessiner(d.points || [], true);
 
-        if (!d.points || !d.points.length) return;
+        var jours = d.parJour || [];
+        var curseur = document.getElementById('fg-time-range');
+        var bloc = document.getElementById('fg-time');
+        // Un seul jour de données ne mérite pas un curseur.
+        if (!curseur || !bloc || jours.length < 2) return;
 
-        var groupe = [];
-        d.points.forEach(function (p) {
-          if (!isFinite(p.lat) || !isFinite(p.lon)) return;
-          var cercle = L.circleMarker([p.lat, p.lon], {
-            radius: rayon(p.frp),
-            color: couleur(p.frp),
-            fillColor: couleur(p.frp),
-            fillOpacity: 0.45,
-            weight: 2,
-          }).addTo(carte);
-          cercle.bindPopup(
-            '<strong>' + (p.frp ? Math.round(p.frp) + ' MW' : 'puissance inconnue') + '</strong><br>' +
-            p.date + ' à ' + p.heure + ' UTC<br>' +
-            'à ' + p.distanceKm + ' km de Saumos'
-          );
-          groupe.push([p.lat, p.lon]);
-        });
+        // Le dernier cran affiche la période entière plutôt qu'une journée :
+        // c'est l'état par défaut de la carte, et ça évite d'avoir à revenir
+        // en arrière pour retrouver la vue d'ensemble.
+        var crans = jours.length;
+        curseur.max = String(crans);
+        curseur.value = String(crans);
+        bloc.removeAttribute('hidden');
 
-        // Recadre sur les foyers réels, en gardant Saumos dans le champ.
-        if (groupe.length) {
-          groupe.push(SAUMOS);
-          carte.fitBounds(L.latLngBounds(groupe).pad(0.2));
+        var minLab = document.getElementById('fg-time-min');
+        var maxLab = document.getElementById('fg-time-max');
+        if (minLab) minLab.textContent = jourFr(jours[0].date);
+        if (maxLab) maxLab.textContent = 'Tout';
+
+        var etiquette = document.getElementById('fg-time-label');
+
+        function afficher() {
+          var i = parseInt(curseur.value, 10);
+          if (i >= crans) {
+            if (etiquette) etiquette.textContent = 'Période entière — ' + d.total + ' détections';
+            dessiner(d.points || [], false);
+            chiffres(d.total, d.frpMax, d.derniereDetection);
+            return;
+          }
+          var jour = jours[i];
+          var pts = (d.points || []).filter(function (p) { return p.date === jour.date; });
+          if (etiquette) {
+            etiquette.textContent = jourFr(jour.date) + ' — ' + jour.total +
+              ' détection' + (jour.total > 1 ? 's' : '') + ', ' + jour.frpTotal + ' MW cumulés';
+          }
+          dessiner(pts, false);
+          chiffres(jour.total, jour.frpMax, pts[0] ? jour.date + ' ' + pts[0].heure : '—');
         }
+
+        curseur.addEventListener('input', afficher);
+        afficher();
       })
       .catch(function () {
         echec('Détections satellite indisponibles pour le moment.');

@@ -18,7 +18,10 @@ const LON = -1.02;
 // rapport avec ce feu où d'autres sources de chaleur (urbaines, agricoles,
 // un autre feu de forêt) auraient pu se glisser dans les détections.
 const BBOX = '-1.35,44.80,-0.85,45.20';
-const JOURS = 1;
+
+// FIRMS plafonne la profondeur d'historique à 10 jours en temps quasi réel.
+const JOURS_DEFAUT = 1;
+const JOURS_MAX = 10;
 
 // Deux satellites VIIRS : leurs passages ne sont pas synchronisés, les
 // combiner réduit les trous de couverture.
@@ -45,8 +48,8 @@ function parseCsv(texte) {
   });
 }
 
-async function recuperer(capteur, cle) {
-  const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${cle}/${capteur}/${BBOX}/${JOURS}`;
+async function recuperer(capteur, cle, jours) {
+  const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${cle}/${capteur}/${BBOX}/${jours}`;
   const r = await fetch(url);
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const texte = await r.text();
@@ -75,9 +78,12 @@ module.exports = async (req, res) => {
     return;
   }
 
+  const demande = parseInt((req.query && req.query.jours) || '', 10);
+  const jours = Math.min(JOURS_MAX, Math.max(1, demande || JOURS_DEFAUT));
+
   let points = [];
   try {
-    const resultats = await Promise.allSettled(CAPTEURS.map((c) => recuperer(c, cle)));
+    const resultats = await Promise.allSettled(CAPTEURS.map((c) => recuperer(c, cle, jours)));
     points = resultats.filter((r) => r.status === 'fulfilled').flatMap((r) => r.value);
     if (!resultats.some((r) => r.status === 'fulfilled')) {
       throw new Error('tous les capteurs ont échoué');
@@ -89,15 +95,36 @@ module.exports = async (req, res) => {
 
   const enrichis = points
     .map((p) => ({ ...p, distanceKm: Math.round(distanceKm(LAT, LON, p.lat, p.lon)) }))
-    .sort((a, b) => (a.date + a.heure).localeCompare(b.date + b.heure) * -1);
+    .sort((a, b) => (b.date + b.heure).localeCompare(a.date + a.heure));
+
+  // Découpage par journée : c'est ce qui alimente le curseur temporel de la
+  // carte, et ça évite au navigateur de refaire une requête à chaque cran.
+  const parJour = {};
+  enrichis.forEach((p) => {
+    if (!parJour[p.date]) parJour[p.date] = { date: p.date, total: 0, frpTotal: 0, frpMax: 0 };
+    const j = parJour[p.date];
+    j.total += 1;
+    j.frpTotal += p.frp;
+    j.frpMax = Math.max(j.frpMax, p.frp);
+  });
+  const joursListe = Object.values(parJour)
+    .map((j) => ({ ...j, frpTotal: Math.round(j.frpTotal), frpMax: Math.round(j.frpMax) }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const frpTotal = enrichis.reduce((s, p) => s + p.frp, 0);
 
   res.status(200).json({
     ok: true,
     source: 'NASA FIRMS · VIIRS (SNPP + NOAA-20)',
-    fenetre: JOURS === 1 ? 'dernières 24h' : `derniers ${JOURS} jours`,
+    fenetre: jours === 1 ? 'dernières 24h' : `derniers ${jours} jours`,
+    jours,
     total: enrichis.length,
     frpMax: enrichis.length ? Math.max(...enrichis.map((p) => p.frp)) : 0,
+    // Somme des puissances : c'est l'énergie dégagée par l'ensemble du front,
+    // et non par un seul pixel — c'est elle qui pondère le risque d'orage de feu.
+    frpTotal: Math.round(frpTotal),
     derniereDetection: enrichis[0] ? `${enrichis[0].date} ${enrichis[0].heure}` : null,
-    points: enrichis.slice(0, 30),
+    parJour: joursListe,
+    points: enrichis.slice(0, 600),
   });
 };

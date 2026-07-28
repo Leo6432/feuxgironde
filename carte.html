@@ -52,7 +52,7 @@
 <div class="container page-head">
   <span class="kicker">Données NASA FIRMS · satellites VIIRS</span>
   <h1>Foyers actifs en direct</h1>
-  <p class="measure">Chaque point est une <strong>détection thermique</strong> : un endroit où un satellite a mesuré une chaleur anormale en survolant la zone au cours des dernières 24 heures. Ce n’est pas le périmètre de l’incendie, et ce n’est pas une carte officielle des secours.</p>
+  <p class="measure">Chaque point est une <strong>détection thermique</strong> : un endroit où un satellite a mesuré une chaleur anormale en survolant la zone. Un satellite ne passe que quelques fois par jour — <strong>l’absence de point ne veut pas dire l’absence de feu</strong>. Ce n’est ni le périmètre de l’incendie, ni une carte officielle des secours.</p>
 </div>
 
 <section class="section" style="padding-top:0">
@@ -62,6 +62,15 @@
 
     <div id="fg-map" class="map-shell" role="img" aria-label="Carte des foyers actifs détectés par satellite autour de Saumos"></div>
 
+    <div class="time-bar" id="fg-time" hidden>
+      <div class="time-head">
+        <label for="fg-time-range">Remonter dans le temps</label>
+        <output id="fg-time-label" for="fg-time-range"></output>
+      </div>
+      <input type="range" id="fg-time-range" min="0" max="0" step="1" value="0">
+      <div class="time-ends"><span id="fg-time-min"></span><span id="fg-time-max"></span></div>
+    </div>
+
     <div class="map-legend">
       <span><i style="background:#CE1B26"></i> Forte puissance (≥ 30 MW)</span>
       <span><i style="background:#E8761B"></i> Moyenne (10–30 MW)</span>
@@ -70,7 +79,7 @@
 
     <div class="marks" style="margin-top:28px">
       <div class="mark">
-        <div class="mark-k">Foyers détectés (24h)</div>
+        <div class="mark-k">Foyers détectés</div>
         <div class="mark-v" id="fg-carte-total">—</div>
       </div>
       <div class="mark">
@@ -83,9 +92,6 @@
       </div>
     </div>
 
-    <p class="notice" style="margin-top:32px">
-      <strong>Comment lire cette carte.</strong> Un satellite ne voit la zone que lors de ses passages, quelques fois par jour : <strong>l’absence de point ne signifie pas l’absence de feu</strong>, seulement qu’aucune chaleur n’a été détectée lors du dernier survol, ou que les nuages et la fumée ont masqué le sol. À l’inverse, un point peut correspondre à une autre source de chaleur que l’incendie. La puissance radiative (FRP, en mégawatts) donne une idée de l’intensité du foyer au moment de la mesure. Carte complète et archives sur <a href="https://firms.modaps.eosdis.nasa.gov/map/" rel="noopener">le site NASA FIRMS</a>.
-    </p>
   </div>
 </section>
 

@@ -369,3 +369,18 @@ td{padding:18px 20px;vertical-align:middle}
 @media (max-width:720px){
   .map-shell{height:400px}
 }
+
+/* ── curseur temporel de la carte ──────────────────────── */
+.time-bar{
+  margin-top:16px;
+  padding:16px 18px;
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  background:var(--bg-alt);
+}
+.time-bar[hidden]{display:none}
+.time-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
+.time-head label{font-size:13.5px;color:var(--muted)}
+.time-head output{font-family:'Archivo',sans-serif;font-weight:600;font-size:15.5px}
+.time-bar input[type=range]{width:100%;margin:12px 0 4px;accent-color:var(--red)}
+.time-ends{display:flex;justify-content:space-between;font-size:13px;color:var(--faint)}
