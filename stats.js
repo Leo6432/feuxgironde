@@ -38,20 +38,6 @@
     Array.prototype.forEach.call(table.querySelectorAll('.tag'), function (tag) {
       if (tag.textContent === 'En cours') tag.parentNode.removeChild(tag);
     });
-    // La ligne du jour porte la même pastille sobre que les jours précédents
-    // en portaient : « En cours », qui remplace toute étiquette de prévision
-    // devenue caduque puisque le jour est arrivé.
-    var ligneJour = table.querySelector('tr[data-date="' + aujourdhui + '"] .day-toggle');
-    if (ligneJour) {
-      var pastille = ligneJour.querySelector('.tag');
-      if (!pastille) {
-        pastille = document.createElement('span');
-        ligneJour.appendChild(pastille);
-      }
-      pastille.className = 'tag tag-red';
-      pastille.textContent = 'En cours';
-    }
-
     var restants = [];
     Array.prototype.forEach.call(
       table.querySelectorAll('tr[data-date]:not(.day-detail)'),

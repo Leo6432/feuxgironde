@@ -399,13 +399,43 @@
           // filtrage, on redessinerait bien plus souvent que l'écran ne se
           // rafraîchit.
           var enAttente = false;
-          curseur.addEventListener('input', function () {
+          function planifier() {
             if (enAttente) return;
             enAttente = true;
             requestAnimationFrame(function () {
               enAttente = false;
               rendre(debut + parseInt(curseur.value, 10) * HEURE);
             });
+          }
+          curseur.addEventListener('input', planifier);
+
+          // Sur tactile, beaucoup de navigateurs transforment le doigt qui
+          // glisse en défilement de page : le curseur ne bouge qu'au tap.
+          // On pilote donc la valeur nous-mêmes aux événements pointer, qui
+          // couvrent indifféremment souris et doigt.
+          var glisse = false;
+          function suivre(ev) {
+            var r = curseur.getBoundingClientRect();
+            if (!r.width) return;
+            var part = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
+            var v = String(Math.round(part * crans));
+            if (v !== curseur.value) {
+              curseur.value = v;
+              planifier();
+            }
+          }
+          curseur.addEventListener('pointerdown', function (ev) {
+            glisse = true;
+            if (curseur.setPointerCapture) {
+              try { curseur.setPointerCapture(ev.pointerId); } catch (e) { /* tant pis */ }
+            }
+            suivre(ev);
+          });
+          curseur.addEventListener('pointermove', function (ev) {
+            if (glisse) suivre(ev);
+          });
+          ['pointerup', 'pointercancel'].forEach(function (nom) {
+            curseur.addEventListener(nom, function () { glisse = false; });
           });
         }
 

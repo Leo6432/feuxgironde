@@ -383,5 +383,9 @@ td{padding:18px 20px;vertical-align:middle}
 .time-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
 .time-head label{font-size:13.5px;color:var(--muted)}
 .time-head output{font-family:'Archivo',sans-serif;font-weight:600;font-size:15.5px}
-.time-bar input[type=range]{width:100%;margin:12px 0 4px;accent-color:var(--red)}
+/* touch-action:none : sans ça, le glissement horizontal du doigt est pris
+   pour un défilement de page et le curseur ne suit pas. La hauteur élargit
+   la zone de prise du pouce ; display:block pour qu'elle pousse réellement
+   le flux — en inline, les étiquettes du dessous recouvraient le curseur. */
+.time-bar input[type=range]{display:block;width:100%;height:34px;margin:4px 0 2px;accent-color:var(--red);touch-action:none;cursor:pointer}
 .time-ends{display:flex;justify-content:space-between;font-size:13px;color:var(--faint)}
