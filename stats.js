@@ -23,14 +23,47 @@
               document.querySelector('table tr[data-date]').closest('table');
   if (!table) return;
 
+  // fr-CA donne directement AAAA-MM-JJ, comparable aux data-date.
+  var aujourdhui = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' })
+    .format(new Date());
+
+  // Recalcule l'intervalle de dates affiché au-dessus du tableau.
+  function majKicker() {
+    var restants = [];
+    Array.prototype.forEach.call(
+      table.querySelectorAll('tr[data-date]:not(.day-detail)'),
+      function (tr) { restants.push(tr.getAttribute('data-date')); }
+    );
+    var kicker = document.querySelector('.page-head .kicker');
+    if (!kicker || restants.length < 2) return;
+    var libelle = function (date, avecMois) {
+      var o = avecMois
+        ? { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Paris' }
+        : { weekday: 'long', day: 'numeric', timeZone: 'Europe/Paris' };
+      return new Date(date + 'T12:00:00Z').toLocaleDateString('fr-FR', o);
+    };
+    var premier = restants[0], dernier = restants[restants.length - 1];
+    var memeMois = premier.slice(0, 7) === dernier.slice(0, 7);
+    kicker.textContent = 'Du ' + libelle(premier, !memeMois) + ' au ' + libelle(dernier, true);
+  }
+
+  // Déplie / replie le détail d'un jour — utilisé aussi par les lignes
+  // créées dynamiquement, qui n'existaient pas au chargement.
+  function brancherBascule(btn) {
+    btn.addEventListener('click', function () {
+      var cible = document.getElementById(btn.getAttribute('aria-controls'));
+      if (!cible) return;
+      var ouvert = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', ouvert ? 'false' : 'true');
+      if (ouvert) { cible.setAttribute('hidden', ''); }
+      else { cible.removeAttribute('hidden'); }
+    });
+  }
+
   // Bascule de journée automatique : les jours passés sortent du tableau,
   // l'étiquette « En cours » suit la date du jour et l'intervalle affiché en
   // tête se recale — sans édition manuelle à chaque minuit.
   (function () {
-    // fr-CA donne directement AAAA-MM-JJ, comparable aux data-date.
-    var aujourdhui = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' })
-      .format(new Date());
-
     Array.prototype.forEach.call(table.querySelectorAll('tr[data-date]'), function (tr) {
       if (tr.getAttribute('data-date') < aujourdhui) tr.parentNode.removeChild(tr);
     });
@@ -38,22 +71,7 @@
     Array.prototype.forEach.call(table.querySelectorAll('.tag'), function (tag) {
       if (tag.textContent === 'En cours') tag.parentNode.removeChild(tag);
     });
-    var restants = [];
-    Array.prototype.forEach.call(
-      table.querySelectorAll('tr[data-date]:not(.day-detail)'),
-      function (tr) { restants.push(tr.getAttribute('data-date')); }
-    );
-    var kicker = document.querySelector('.page-head .kicker');
-    if (kicker && restants.length > 1) {
-      var opts = { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Paris' };
-      var libelle = function (date, avecMois) {
-        var o = avecMois ? opts : { weekday: 'long', day: 'numeric', timeZone: 'Europe/Paris' };
-        return new Date(date + 'T12:00:00Z').toLocaleDateString('fr-FR', o);
-      };
-      var premier = restants[0], dernier = restants[restants.length - 1];
-      var memeMois = premier.slice(0, 7) === dernier.slice(0, 7);
-      kicker.textContent = 'Du ' + libelle(premier, !memeMois) + ' au ' + libelle(dernier, true);
-    }
+    majKicker();
   })();
 
   function niveau(s) { return s >= 75 ? 'hi' : (s >= 55 ? 'mid' : 'lo'); }
@@ -117,6 +135,64 @@
       var d = res[0];
       var feu = res[1];
       if (!d || !d.ok || !Array.isArray(d.jours)) return;
+
+      // Extension automatique : toute journée entièrement couverte par un
+      // modèle Météo-France (les quatre périodes présentes) et absente du
+      // tableau y entre d'elle-même — le tableau suit l'horizon d'ARPEGE au
+      // lieu de se vider à mesure que les jours passent.
+      var tbody = table.querySelector('tbody');
+      d.jours.forEach(function (j) {
+        if (!tbody || j.date < aujourdhui) return;
+        if (table.querySelector('tr[data-date="' + j.date + '"]')) return;
+        if (j.modele !== 'AROME' && j.modele !== 'ARPEGE') return;
+        if (!j.periodes || j.periodes.length < 4) return;
+
+        var quand = new Date(j.date + 'T12:00:00Z');
+        var jourCourt = quand
+          .toLocaleDateString('fr-FR', { weekday: 'short', timeZone: 'Europe/Paris' })
+          .replace('.', '');
+        jourCourt = jourCourt.charAt(0).toUpperCase() + jourCourt.slice(1) + ' ' +
+          quand.toLocaleDateString('fr-FR', { day: 'numeric', timeZone: 'Europe/Paris' });
+        var idDetail = 'jour-' + j.date;
+
+        var ligne = document.createElement('tr');
+        ligne.setAttribute('data-date', j.date);
+        ligne.innerHTML =
+          '<td class="t-daytag" data-label="Jour">' +
+            '<button class="day-toggle" type="button" aria-expanded="false" aria-controls="' + idDetail + '">' +
+              '<span class="chev" aria-hidden="true"></span><b>' + jourCourt + '</b>' +
+              '<span class="tag tag-blue">Prévision ' + j.modele + '</span>' +
+            '</button></td>' +
+          '<td class="num t-sub" data-label="T° max">—</td>' +
+          '<td class="num t-sub" data-label="Humidité">—</td>' +
+          '<td class="num t-sub" data-label="Rafales">—</td>' +
+          '<td class="num lvl js-diff" data-label="Difficulté">—</td>' +
+          '<td data-label="Risque d’orage de feu"><div class="risk js-risk"><div class="bar"><i style="width:0%"></i></div><span class="lvl">—</span></div></td>' +
+          '<td class="t-note" data-label="Projection">—</td>';
+
+        var detail = document.createElement('tr');
+        detail.className = 'day-detail';
+        detail.id = idDetail;
+        detail.setAttribute('data-date', j.date);
+        detail.setAttribute('hidden', '');
+        detail.innerHTML = '<td colspan="7"><div class="periodes">' +
+          j.periodes.map(function (p) {
+            return '<div class="periode"><div class="p-lab">' + p.label + '</div>' +
+              '<div class="p-score">—</div><div class="p-meta"></div><div class="p-pic"></div></div>';
+          }).join('') + '</div></td>';
+
+        // Insertion en ordre chronologique, le détail collé à sa journée.
+        var avant = null;
+        Array.prototype.forEach.call(
+          tbody.querySelectorAll('tr[data-date]:not(.day-detail)'),
+          function (tr) { if (!avant && tr.getAttribute('data-date') > j.date) avant = tr; }
+        );
+        tbody.insertBefore(ligne, avant);
+        tbody.insertBefore(detail, avant);
+        brancherBascule(ligne.querySelector('.day-toggle'));
+      });
+      majKicker();
+
       var maj = 0;
 
       d.jours.forEach(function (j) {
