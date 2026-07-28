@@ -38,12 +38,21 @@
     Array.prototype.forEach.call(table.querySelectorAll('.tag'), function (tag) {
       if (tag.textContent === 'En cours') tag.parentNode.removeChild(tag);
     });
+    // Une seule pastille par jour : si la ligne du jour en porte déjà une
+    // (« Fenêtre 17h–19h »…), on fusionne au lieu d'empiler deux étiquettes.
     var ligneJour = table.querySelector('tr[data-date="' + aujourdhui + '"] .day-toggle');
     if (ligneJour) {
-      var pastille = document.createElement('span');
-      pastille.className = 'tag tag-red';
-      pastille.textContent = 'En cours';
-      ligneJour.appendChild(pastille);
+      var existant = ligneJour.querySelector('.tag');
+      if (existant) {
+        existant.className = 'tag tag-red';
+        existant.textContent = 'En cours · ' +
+          existant.textContent.charAt(0).toLowerCase() + existant.textContent.slice(1);
+      } else {
+        var pastille = document.createElement('span');
+        pastille.className = 'tag tag-red';
+        pastille.textContent = 'En cours';
+        ligneJour.appendChild(pastille);
+      }
     }
 
     var restants = [];
