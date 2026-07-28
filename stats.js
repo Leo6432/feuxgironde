@@ -195,19 +195,36 @@
 
       var maj = 0;
 
+      // Une seule saisie manuelle subsiste : la dernière surface confirmée
+      // par la préfecture, lue sur le tableau. Tout le reste en découle.
+      var surface = parseInt(table.getAttribute('data-surface') || '', 10);
+      var hauteCumulee = surface;
+
       d.jours.forEach(function (j) {
         var tr = table.querySelector('tr[data-date="' + j.date + '"]');
         var ligne = tr && tr.querySelector('.js-diff');
         if (ligne) { poser(ligne, j.score); maj++; }
 
-        // La pastille de modèle suit l'horizon réel : quand AROME couvre une
-        // journée étiquetée « Prévision ARPEGE », elle bascule d'elle-même.
-        // Les étiquettes éditoriales (« Fenêtre 17h–19h »…) ne sont pas
-        // touchées.
-        if (tr && j.modele && j.modele !== 'inconnu') {
-          var pastille = tr.querySelector('.day-toggle .tag');
-          if (pastille && pastille.textContent.indexOf('Prévision') === 0) {
-            pastille.textContent = 'Prévision ' + j.modele;
+        // Pastille automatique : jour critique (difficulté ≥ 75) → fenêtre
+        // horaire calée sur l'heure la plus dangereuse du run ; sinon, le
+        // modèle qui couvre réellement la journée. La ligne critique prend
+        // aussi sa teinte rouge d'elle-même.
+        if (tr) {
+          tr.classList.toggle('peak', j.score >= 75);
+          var bouton = tr.querySelector('.day-toggle');
+          var pastille = bouton && bouton.querySelector('.tag');
+          if (bouton && !pastille) {
+            pastille = document.createElement('span');
+            bouton.appendChild(pastille);
+          }
+          if (pastille) {
+            if (j.score >= 75 && isFinite(j.pireHeure)) {
+              pastille.className = 'tag tag-red';
+              pastille.textContent = 'Fenêtre ' + Math.max(0, j.pireHeure - 2) + 'h–' + j.pireHeure + 'h';
+            } else if (j.modele === 'AROME' || j.modele === 'ARPEGE') {
+              pastille.className = 'tag tag-blue';
+              pastille.textContent = 'Prévision ' + j.modele;
+            }
           }
         }
 
@@ -215,8 +232,27 @@
         // feu aujourd'hui. Pour les jours à venir, cela revient à supposer
         // que le front reste aussi actif qu'à la dernière mesure — c'est une
         // hypothèse, pas une prévision de l'activité du feu.
-        if (tr && feu) {
-          poserRisque(tr, Math.round(seuilMeteo(j.score) * coefActivite(feu.frpTotal) * 100));
+        var pct = null;
+        if (feu) {
+          pct = Math.round(seuilMeteo(j.score) * coefActivite(feu.frpTotal) * 100);
+          if (tr) poserRisque(tr, pct);
+        }
+
+        // Projection automatique : borne basse, la surface confirmée (sans
+        // nouvel orage de feu, le plateau tient) ; borne haute, le cumul —
+        // jour après jour — du saut observé lors des deux orages de feu
+        // (~10 000 ha) pondéré par le risque de chaque journée.
+        if (tr && isFinite(surface) && surface > 0) {
+          if (pct !== null) hauteCumulee += Math.round(pct * 10000 / 100 / 1000) * 1000;
+          var cellules2 = tr.querySelectorAll('td');
+          var celProj = cellules2[6];
+          if (celProj) {
+            if (j.date === aujourdhui) {
+              celProj.textContent = surface.toLocaleString('fr-FR') + ' ha (dernier point préfecture)';
+            } else if (pct !== null) {
+              celProj.textContent = surface.toLocaleString('fr-FR') + ' – ' + hauteCumulee.toLocaleString('fr-FR') + ' ha';
+            }
+          }
         }
 
         // Les colonnes météo affichées suivent aussi le dernier run : sans
