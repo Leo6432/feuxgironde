@@ -72,7 +72,7 @@
       if (!maj) return;
       var marque = document.getElementById('fg-live');
       if (marque) {
-        marque.hidden = false;
+        marque.classList.remove('stale');
         marque.textContent = 'Scores recalculés à l’instant — ' + d.source + ' · instabilité : ' + d.instabilite + '.';
       }
     })
