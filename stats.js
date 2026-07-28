@@ -125,24 +125,36 @@
         });
       });
 
+      // Blocs de run : l'heure réelle d'initialisation, lue dans les
+      // métadonnées Open-Meteo. Un run se nomme par son heure UTC ("09Z"),
+      // c'est la convention de tous les sites météo.
+      function poserRun(nom, run) {
+        var v = document.getElementById('fg-run-' + nom);
+        var s = document.getElementById('fg-run-' + nom + '-detail');
+        if (!v) return;
+        if (!run || !isFinite(run.init)) {
+          v.textContent = '—';
+          if (s) s.textContent = 'heure du run indisponible pour le moment';
+          return;
+        }
+        var q = new Date(run.init);
+        v.textContent = String(q.getUTCHours()).padStart(2, '0') + 'Z';
+        if (s) {
+          s.textContent = 'run du ' + q.toLocaleDateString('fr-FR', {
+            weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/Paris',
+          }) + ', initialisé à ' + q.toLocaleTimeString('fr-FR', {
+            hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris',
+          }).replace(':', 'h') + ' heure française';
+        }
+      }
+      poserRun('arome', d.runs && d.runs.arome);
+      poserRun('arpege', d.runs && d.runs.arpege);
+
       if (!maj) return;
       var marque = document.getElementById('fg-live');
       if (marque) {
         marque.classList.remove('stale');
-        // Open-Meteo ne publie pas l'heure du run : l'API détecte elle-même
-        // le moment où les valeurs du modèle ont changé pour la dernière fois.
-        var run = '';
-        if (isFinite(d.actualise) && d.actualise) {
-          var quand = new Date(d.actualise);
-          run = ' · nouveau run détecté ' + quand.toLocaleDateString('fr-FR', {
-            weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/Paris',
-          }) + ' vers ' + quand.toLocaleTimeString('fr-FR', {
-            hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris',
-          }).replace(':', 'h');
-        }
-        marque.textContent = 'Scores recalculés à l’instant — ' + d.source +
-          ' · instabilité : ' + d.instabilite + run +
-          (feu ? ' · activité du feu : ' + feu.frpTotal + ' MW mesurés par satellite.' : '.');
+        marque.textContent = 'Mis à jour à l’instant — vous consultez les dernières données.';
       }
     })
     .catch(function () { /* le tableau statique fait foi */ });
