@@ -23,6 +23,47 @@
               document.querySelector('table tr[data-date]').closest('table');
   if (!table) return;
 
+  // Bascule de journée automatique : les jours passés sortent du tableau,
+  // l'étiquette « En cours » suit la date du jour et l'intervalle affiché en
+  // tête se recale — sans édition manuelle à chaque minuit.
+  (function () {
+    // fr-CA donne directement AAAA-MM-JJ, comparable aux data-date.
+    var aujourdhui = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' })
+      .format(new Date());
+
+    Array.prototype.forEach.call(table.querySelectorAll('tr[data-date]'), function (tr) {
+      if (tr.getAttribute('data-date') < aujourdhui) tr.parentNode.removeChild(tr);
+    });
+
+    Array.prototype.forEach.call(table.querySelectorAll('.tag'), function (tag) {
+      if (tag.textContent === 'En cours') tag.parentNode.removeChild(tag);
+    });
+    var ligneJour = table.querySelector('tr[data-date="' + aujourdhui + '"] .day-toggle');
+    if (ligneJour) {
+      var pastille = document.createElement('span');
+      pastille.className = 'tag tag-red';
+      pastille.textContent = 'En cours';
+      ligneJour.appendChild(pastille);
+    }
+
+    var restants = [];
+    Array.prototype.forEach.call(
+      table.querySelectorAll('tr[data-date]:not(.day-detail)'),
+      function (tr) { restants.push(tr.getAttribute('data-date')); }
+    );
+    var kicker = document.querySelector('.page-head .kicker');
+    if (kicker && restants.length > 1) {
+      var opts = { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Paris' };
+      var libelle = function (date, avecMois) {
+        var o = avecMois ? opts : { weekday: 'long', day: 'numeric', timeZone: 'Europe/Paris' };
+        return new Date(date + 'T12:00:00Z').toLocaleDateString('fr-FR', o);
+      };
+      var premier = restants[0], dernier = restants[restants.length - 1];
+      var memeMois = premier.slice(0, 7) === dernier.slice(0, 7);
+      kicker.textContent = 'Du ' + libelle(premier, !memeMois) + ' au ' + libelle(dernier, true);
+    }
+  })();
+
   function niveau(s) { return s >= 75 ? 'hi' : (s >= 55 ? 'mid' : 'lo'); }
 
   function poser(el, score) {
