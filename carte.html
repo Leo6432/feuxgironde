@@ -52,7 +52,7 @@
 <div class="container page-head">
   <span class="kicker">Données NASA FIRMS · satellites VIIRS</span>
   <h1>Le feu heure par heure</h1>
-  <p class="measure">En <strong style="color:#CE1B26">couleur</strong>, les foyers encore chauds à l’heure choisie ; en <strong style="color:#6B6B78">gris</strong>, tout ce que le feu a déjà parcouru avant elle. Déplacez le curseur pour rejouer l’incendie depuis son départ. Un satellite ne passe que quelques fois par jour — <strong>l’absence de point ne veut pas dire l’absence de feu</strong>. Ce n’est ni le périmètre officiel de l’incendie, ni une carte des secours.</p>
+  <p class="measure">En <strong style="color:#B89E3F">sable</strong>, la zone déjà brûlée ; en <strong style="color:#CE1B26">orange et rouge</strong>, les foyers encore actifs à l’heure choisie. Déplacez le curseur pour rejouer l’incendie depuis son départ. Un satellite ne passe que quelques fois par jour — <strong>l’absence de détection ne veut pas dire l’absence de feu</strong>. Ce n’est ni le périmètre officiel de l’incendie, ni une carte des secours.</p>
 </div>
 
 <section class="section" style="padding-top:0">
@@ -72,15 +72,15 @@
     </div>
 
     <div class="map-legend">
-      <span><i style="background:#3A3A44"></i> Zone déjà parcourue</span>
-      <span><i style="background:#EBA92B"></i> Foyer actif &lt; 10 MW</span>
-      <span><i style="background:#E8761B"></i> 10–30 MW</span>
-      <span><i style="background:#CE1B26"></i> ≥ 30 MW</span>
+      <span><i style="background:#E8DDB0"></i> Zone brûlée</span>
+      <span><i style="background:#F0C441"></i> Foyer actif &lt; 10 MW</span>
+      <span><i style="background:#EE8A17"></i> 10–30 MW</span>
+      <span><i style="background:#D8232E"></i> ≥ 30 MW</span>
     </div>
 
     <div class="marks" style="margin-top:28px">
       <div class="mark">
-        <div class="mark-k">Foyers détectés</div>
+        <div class="mark-k">Foyers actifs à l’heure choisie</div>
         <div class="mark-v" id="fg-carte-total">—</div>
       </div>
       <div class="mark">
@@ -109,7 +109,7 @@
         <li>Préfecture de la Gironde &amp; ministère de l’Intérieur — surfaces et moyens</li>
         <li>Météociel — modèles AROME et ARPEGE</li>
         <li>NASA FIRMS — détections satellite de foyers actifs</li>
-        <li>Fonds de carte © OpenStreetMap</li>
+        <li>Fond de carte satellite © Esri — Maxar, Earthstar Geographics</li>
       </ul>
     </div>
   </div>

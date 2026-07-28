@@ -104,6 +104,16 @@ async function recuperer(capteur, cle, jours) {
   }));
 }
 
+// Horodatage UTC d'une détection ("2026-07-28" + "19h12"). FIRMS publie ses
+// heures en UTC : on reste dans ce référentiel de bout en bout.
+function tsUtc(date, heure) {
+  const hm = String(heure || '0h0').split('h');
+  return Date.UTC(
+    +date.slice(0, 4), +date.slice(5, 7) - 1, +date.slice(8, 10),
+    +hm[0] || 0, +hm[1] || 0
+  );
+}
+
 function parametreJours(req) {
   if (req && req.query && req.query.jours) return String(req.query.jours);
   try {
@@ -134,7 +144,9 @@ module.exports = async (req, res) => {
   // Cache serveur : le cache CDN ne couvre qu'une région et repart de zéro à
   // chaque déploiement. Une fenêtre longue coûte cher côté FIRMS (deux
   // capteurs, plusieurs milliers de lignes), donc on la garde en Redis.
-  const cleCache = 'firms:v1:' + jours;
+  // v2 : la réponse transporte des cellules agrégées et non plus des points
+  // bruts — changer la clé évite de servir l'ancienne forme depuis le cache.
+  const cleCache = 'firms:v2:' + jours;
   let redis = null;
   try {
     const p = getClient();
@@ -207,6 +219,38 @@ module.exports = async (req, res) => {
 
   const frpTotal = enrichis.reduce((s, p) => s + p.frp, 0);
 
+  // Agrégation en cellules de la taille d'un pixel VIIRS (~375 m). Envoyer
+  // les détections brutes plafonnées coupait l'historique : triées du plus
+  // récent au plus ancien, seules les dernières heures passaient le plafond,
+  // et la carte ne montrait plus que la journée en cours. Une cellule porte
+  // sa première et sa dernière détection : c'est tout ce qu'il faut pour
+  // rejouer l'incendie, pour une fraction du poids.
+  const GRILLE = 0.004;
+  const parCellule = {};
+  enrichis.forEach((p) => {
+    const la = Math.round(p.lat / GRILLE) * GRILLE;
+    const lo = Math.round(p.lon / GRILLE) * GRILLE;
+    const k = la.toFixed(3) + '_' + lo.toFixed(3);
+    const t = tsUtc(p.date, p.heure);
+    let c = parCellule[k];
+    if (!c) {
+      c = parCellule[k] = {
+        lat: +la.toFixed(3),
+        lon: +lo.toFixed(3),
+        t0: t,
+        t1: t,
+        frp: 0,
+        n: 0,
+        distanceKm: Math.round(distanceKm(LAT, LON, la, lo)),
+      };
+    }
+    if (t < c.t0) c.t0 = t;
+    if (t > c.t1) c.t1 = t;
+    if (p.frp > c.frp) c.frp = Math.round(p.frp);
+    c.n += 1;
+  });
+  const cellules = Object.values(parCellule).sort((a, b) => a.t0 - b.t0).slice(0, 15000);
+
   const sortie = {
     ok: true,
     source: 'NASA FIRMS · VIIRS (SNPP + NOAA-20)',
@@ -222,7 +266,8 @@ module.exports = async (req, res) => {
     frpTotal: Math.round(frpTotal),
     derniereDetection: enrichis[0] ? `${enrichis[0].date} ${enrichis[0].heure}` : null,
     parJour: joursListe,
-    points: enrichis.slice(0, 3000),
+    grille: GRILLE,
+    cellules,
   };
 
   // 20 min : en dessous du rythme des passages satellite, donc on ne perd
