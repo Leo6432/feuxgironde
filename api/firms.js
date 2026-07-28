@@ -36,9 +36,10 @@ function joursDepuisDepart() {
   return Math.min(JOURS_MAX, Math.max(1, ecoules));
 }
 
-// Deux satellites VIIRS : leurs passages ne sont pas synchronisés, les
-// combiner réduit les trous de couverture.
-const CAPTEURS = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT'];
+// Trois satellites VIIRS : leurs passages sont décalés de quelques dizaines
+// de minutes à quelques heures, les combiner multiplie les passages couverts
+// — c'est ce qui fait la fraîcheur de la « dernière détection ».
+const CAPTEURS = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT'];
 
 function distanceKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -163,9 +164,9 @@ module.exports = async (req, res) => {
   // Cache serveur : le cache CDN ne couvre qu'une région et repart de zéro à
   // chaque déploiement. Une fenêtre longue coûte cher côté FIRMS (deux
   // capteurs, plusieurs milliers de lignes), donc on la garde en Redis.
-  // v4 : grille plus fine et cellules encodées en tableaux compacts — les
-  // entrées des versions précédentes n'ont plus la bonne forme.
-  const cleCache = 'firms:v4:' + jours;
+  // v5 : ajout du satellite NOAA-21 — les entrées précédentes n'ont que
+  // deux capteurs et afficheraient une « dernière détection » plus vieille.
+  const cleCache = 'firms:v5:' + jours;
   let redis = null;
   try {
     const p = getClient();
@@ -290,7 +291,7 @@ module.exports = async (req, res) => {
 
   const sortie = {
     ok: true,
-    source: 'NASA FIRMS · VIIRS (SNPP + NOAA-20)',
+    source: 'NASA FIRMS · VIIRS (SNPP, NOAA-20, NOAA-21)',
     fenetre: joursObtenus === 1 ? 'dernières 24h' : `derniers ${joursObtenus} jours`,
     jours: joursObtenus,
     depuis: DEPART_FEU,
@@ -304,6 +305,9 @@ module.exports = async (req, res) => {
     // et non par un seul pixel — c'est elle qui pondère le risque d'orage de feu.
     frpTotal: Math.round(frpTotal),
     derniereDetection: enrichis[0] ? `${enrichis[0].date} ${enrichis[0].heure}` : null,
+    // Même instant en millisecondes : les pages l'affichent en heure locale,
+    // là où la chaîne ci-dessus reste le libellé UTC brut de FIRMS.
+    derniereTs: enrichis[0] ? tsUtc(enrichis[0].date, enrichis[0].heure) : null,
     parJour: joursListe,
     grille: GRILLE,
     origine: ORIGINE,

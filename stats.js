@@ -129,8 +129,19 @@
       var marque = document.getElementById('fg-live');
       if (marque) {
         marque.classList.remove('stale');
+        // Open-Meteo ne publie pas l'heure du run : l'API détecte elle-même
+        // le moment où les valeurs du modèle ont changé pour la dernière fois.
+        var run = '';
+        if (isFinite(d.actualise) && d.actualise) {
+          var quand = new Date(d.actualise);
+          run = ' · nouveau run détecté ' + quand.toLocaleDateString('fr-FR', {
+            weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/Paris',
+          }) + ' vers ' + quand.toLocaleTimeString('fr-FR', {
+            hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris',
+          }).replace(':', 'h');
+        }
         marque.textContent = 'Scores recalculés à l’instant — ' + d.source +
-          ' · instabilité : ' + d.instabilite +
+          ' · instabilité : ' + d.instabilite + run +
           (feu ? ' · activité du feu : ' + feu.frpTotal + ' MW mesurés par satellite.' : '.');
       }
     })
@@ -162,7 +173,20 @@
       var frp = document.getElementById('fg-firms-frp');
       if (frp) frp.textContent = d.frpMax ? Math.round(d.frpMax) + ' MW' : '—';
       var derniere = document.getElementById('fg-firms-derniere');
-      if (derniere) derniere.textContent = d.derniereDetection || '—';
+      if (derniere) {
+        // derniereTs permet d'afficher l'heure française ; l'ancienne chaîne
+        // UTC brute reste le repli si l'API ne l'envoie pas encore.
+        if (isFinite(d.derniereTs) && d.derniereTs) {
+          var quand = new Date(d.derniereTs);
+          derniere.textContent = quand.toLocaleDateString('fr-FR', {
+            day: 'numeric', month: 'short', timeZone: 'Europe/Paris',
+          }) + ' · ' + quand.toLocaleTimeString('fr-FR', {
+            hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris',
+          }).replace(':', 'h');
+        } else {
+          derniere.textContent = d.derniereDetection || '—';
+        }
+      }
     })
     .catch(function () {
       note.textContent = 'Détections satellite indisponibles pour le moment.';

@@ -34,19 +34,30 @@
     if (note) note.textContent = message;
   }
 
-  // FIRMS horodate en UTC ; on affiche dans ce même référentiel pour que le
-  // curseur corresponde aux info-bulles.
+  // FIRMS horodate en UTC ; on convertit tout à l'heure française, comme les
+  // autres cartes de feux qu'un visiteur peut avoir sous les yeux — afficher
+  // de l'UTC lui ferait croire à deux heures de retard.
+  var FUSEAU = 'Europe/Paris';
+
+  function partie(ms, options, type) {
+    var morceaux = new Intl.DateTimeFormat('fr-FR', options).formatToParts(new Date(ms));
+    for (var i = 0; i < morceaux.length; i++) {
+      if (morceaux[i].type === type) return morceaux[i].value;
+    }
+    return '';
+  }
+
   function heureFr(ms) {
-    var d = new Date(ms);
-    var jour = d.toLocaleDateString('fr-FR', {
-      weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC',
+    var jour = new Date(ms).toLocaleDateString('fr-FR', {
+      weekday: 'short', day: 'numeric', month: 'short', timeZone: FUSEAU,
     });
-    return jour + ' · ' + String(d.getUTCHours()).padStart(2, '0') + 'h';
+    var h = partie(ms, { hour: 'numeric', hourCycle: 'h23', timeZone: FUSEAU }, 'hour');
+    return jour + ' · ' + h.padStart(2, '0') + 'h';
   }
 
   function heureMinFr(ms) {
-    var d = new Date(ms);
-    return String(d.getUTCHours()).padStart(2, '0') + 'h' + String(d.getUTCMinutes()).padStart(2, '0');
+    var opts = { hour: 'numeric', minute: 'numeric', hourCycle: 'h23', timeZone: FUSEAU };
+    return partie(ms, opts, 'hour').padStart(2, '0') + 'h' + partie(ms, opts, 'minute').padStart(2, '0');
   }
 
   function attendreLeaflet(essais, suite) {
@@ -157,10 +168,11 @@
           ? 'dans ≈ ' + h + ' h' + (mn ? ' ' + String(mn).padStart(2, '0') : '')
           : 'dans ≈ ' + mn + ' min';
         if (detail) {
-          var libJour = new Date(prochain).getUTCDate() === new Date().getUTCDate()
+          var opts = { day: 'numeric', timeZone: FUSEAU };
+          var libJour = partie(prochain, opts, 'day') === partie(Date.now(), opts, 'day')
             ? 'aujourd’hui' : 'demain';
           detail.textContent = libJour + ' vers ' + heureMinFr(prochain) +
-            ' UTC — estimé d’après les horaires des passages précédents';
+            ' (heure française) — estimé d’après les horaires des passages précédents';
         }
       }
       maj();
@@ -365,7 +377,7 @@
             .setLatLng([meilleur.lat, meilleur.lon])
             .setContent(
               '<strong>' + (meilleur.frp ? '≈ ' + Math.round(meilleur.frp) + ' MW au plus fort' : 'puissance inconnue') + '</strong><br>' +
-              'détecté du ' + heureFr(meilleur.t0) + ' au ' + heureFr(meilleur.t1) + ' (UTC)<br>' +
+              'détecté du ' + heureFr(meilleur.t0) + ' au ' + heureFr(meilleur.t1) + '<br>' +
               'à ' + meilleur.distanceKm + ' km de Saumos'
             )
             .openOn(carte);

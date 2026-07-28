@@ -9,6 +9,9 @@
 // réelle, et non plus de la chute de pression de surface, qui n'en est qu'un
 // indicateur indirect et se trompe de sens quand un front amène de la pluie.
 
+const crypto = require('crypto');
+const { getClient } = require('../lib/redis');
+
 const LAT = 44.98;   // Saumos, Gironde
 const LON = -1.02;
 
@@ -198,11 +201,39 @@ module.exports = async (req, res) => {
     });
   }
 
+  // Open-Meteo ne dit pas de quel run viennent ses valeurs. On le détecte
+  // nous-mêmes : une empreinte des séries horaires est gardée en Redis, et
+  // tant qu'elle ne bouge pas, c'est le même run ; dès qu'elle change, un
+  // nouveau run vient d'être assimilé et on retient l'heure du changement.
+  let actualise = null;
+  try {
+    const p = getClient();
+    const redis = p ? await p : null;
+    if (redis) {
+      const empreinte = crypto.createHash('sha1')
+        .update(JSON.stringify([mf, gl]))
+        .digest('hex');
+      const CLE = 'meteo:run:v1';
+      const brut = await redis.get(CLE);
+      const etat = brut ? JSON.parse(brut) : null;
+      if (etat && etat.empreinte === empreinte) {
+        actualise = etat.depuis;
+      } else {
+        actualise = Date.now();
+        await redis.set(CLE, JSON.stringify({ empreinte, depuis: actualise }), { EX: 7 * 86400 });
+      }
+    }
+  } catch (e) { /* la détection de run est un confort, jamais une dépendance */ }
+
   const modeles = [...new Set(Object.values(sourceParDate))];
   res.status(200).json({
     ok: true,
     source: 'Open-Meteo · ' + modeles.join(' puis '),
     instabilite: capeDispo ? 'CAPE mesurée' : 'repli sur la pression de surface',
+    // Dernier changement détecté dans les données du modèle (ms epoch), ou
+    // null si Redis est absent. La précision est limitée par le cache de
+    // cette API (~30 min) : c'est « le run a changé vers telle heure ».
+    actualise,
     jours: sortie,
   });
 };
