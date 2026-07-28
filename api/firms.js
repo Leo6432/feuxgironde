@@ -15,14 +15,16 @@ const { getClient } = require('../lib/redis');
 const LAT = 44.98;   // Saumos, Gironde
 const LON = -1.02;
 
-// Boîte large pour la requête FIRMS, affinée ensuite par un rayon de 28 km
+// Boîte large pour la requête FIRMS, affinée ensuite par un rayon de 34 km
 // autour de Saumos. L'ancien rectangle serré (bord sud à 44,80°, soit 20 km)
 // excluait bien Bordeaux et le bassin d'Arcachon… mais coupait aussi le bas
-// du feu. Le cercle laisse le feu s'étendre à 28 km dans toutes les
-// directions, tandis que Mérignac (30 km), Bordeaux (38 km) et Arcachon
-// (39 km) restent en dehors.
+// du feu. Le rayon suit le front : au point du 28 juillet 22h30, la
+// préfecture annonce le feu actif à Lanton (31 km) et au Grand Crohot
+// (32 km) — d'où 34 km, qui les couvre en laissant Bordeaux (38 km) et
+// Arcachon (39 km) en dehors. Le camp de Souge jouxtant Mérignac est dans le
+// cercle : c'est du vrai feu, tant pis pour le risque urbain résiduel.
 const BBOX = '-1.45,44.60,-0.55,45.35';
-const RAYON_KM = 28;
+const RAYON_KM = 34;
 
 // FIRMS plafonne la profondeur d'historique à 10 jours en temps quasi réel.
 const JOURS_DEFAUT = 1;
@@ -167,9 +169,9 @@ module.exports = async (req, res) => {
   // Cache serveur : le cache CDN ne couvre qu'une région et repart de zéro à
   // chaque déploiement. Une fenêtre longue coûte cher côté FIRMS (deux
   // capteurs, plusieurs milliers de lignes), donc on la garde en Redis.
-  // v6 : filtrage passé du rectangle serré au cercle de 35 km — les entrées
-  // précédentes ont le bas du feu coupé.
-  const cleCache = 'firms:v6:' + jours;
+  // v7 : rayon porté à 34 km (feu annoncé à Lanton et au Grand Crohot) —
+  // les entrées précédentes ont les lobes sud et sud-ouest coupés.
+  const cleCache = 'firms:v7:' + jours;
   let redis = null;
   try {
     const p = getClient();
@@ -232,7 +234,7 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // Le vrai filtre géographique : tout ce qui est à plus de 28 km de Saumos
+  // Le vrai filtre géographique : tout ce qui est à plus de 34 km de Saumos
   // (autres feux, chaleur urbaine, brûlages agricoles) sort des données.
   const points = tentative.points
     .filter((p) => distanceKm(LAT, LON, p.lat, p.lon) <= RAYON_KM);
