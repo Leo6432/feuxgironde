@@ -164,6 +164,9 @@ td{padding:18px 20px;vertical-align:middle}
   font-size:13px;font-weight:600;white-space:nowrap;
 }
 .tag-red{background:var(--red-tint);color:var(--red)}
+/* sur les lignes teintées en rouge (jour critique), le fond rose de la
+   pastille disparaît dans celui de la ligne : on la détache en blanc */
+tr.peak .tag{background:#fff}
 .tag-blue{background:var(--blue-tint);color:var(--blue)}
 .tag-grey{background:var(--bg-alt);color:var(--muted)}
 

@@ -88,6 +88,33 @@ function coefSecheresse(joursSansPluie) {
   return Math.min(1.15, 0.90 + 0.0333 * Math.max(0, joursSansPluie));
 }
 
+// Sonde de couverture AROME : une requête légère (température seule) sur le
+// modèle AROME isolé dit jusqu'où porte son horizon. meteofrance_seamless
+// mélange AROME et ARPEGE sans dire qui fournit quoi — cette sonde permet
+// d'étiqueter chaque journée avec le bon modèle, et la pastille « Prévision
+// ARPEGE » bascule d'elle-même en « Prévision AROME » quand le jour entre
+// dans l'horizon d'AROME.
+async function joursArome(jours) {
+  const u = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}` +
+    `&hourly=temperature_2m&models=meteofrance_arome_france_hd` +
+    `&timezone=Europe%2FParis&forecast_days=${jours}`;
+  const r = await fetch(u);
+  if (!r.ok) return new Set();
+  const d = await r.json();
+  const h = d && d.hourly;
+  if (!h || !Array.isArray(h.time)) return new Set();
+  const parDate = {};
+  h.time.forEach((iso, i) => {
+    if (Number.isFinite((h.temperature_2m || [])[i])) {
+      const date = iso.split('T')[0];
+      parDate[date] = (parDate[date] || 0) + 1;
+    }
+  });
+  // Au moins 18 heures couvertes : la journée est réellement fournie par
+  // AROME, pas seulement entamée par la fin de son horizon.
+  return new Set(Object.keys(parDate).filter((date) => parDate[date] >= 18));
+}
+
 async function recuperer(modeles, jours) {
   const r = await fetch(url(modeles, jours));
   if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -110,11 +137,12 @@ module.exports = async (req, res) => {
   // Météo-France d'abord, puis le repli longue échéance pour les journées
   // que ni AROME ni ARPEGE ne couvrent. Les heures de run partent en même
   // temps : elles ne conditionnent pas la réponse, juste son affichage.
-  const [mf, gl, runArome, runArpege] = await Promise.all([
+  const [mf, gl, runArome, runArpege, aromeDates] = await Promise.all([
     recuperer('meteofrance_seamless', 4).catch(() => null),
     recuperer('best_match', 7).catch(() => null),
     heureRun(RUNS.arome),
     heureRun(RUNS.arpege),
+    joursArome(4).catch(() => new Set()),
   ]);
 
   if (!mf && !gl) {
@@ -221,7 +249,9 @@ module.exports = async (req, res) => {
       pireHeure: heures[pire].heure,
       secheresse: Math.round(cs * 1000) / 1000,
       nuit: cn,
-      modele: sourceParDate[date] || 'inconnu',
+      modele: sourceParDate[date] === 'Météo-France'
+        ? (aromeDates.has(date) ? 'AROME' : 'ARPEGE')
+        : (sourceParDate[date] ? 'modèle global' : 'inconnu'),
       periodes,
     });
   }

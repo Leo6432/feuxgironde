@@ -124,6 +124,17 @@
         var ligne = tr && tr.querySelector('.js-diff');
         if (ligne) { poser(ligne, j.score); maj++; }
 
+        // La pastille de modèle suit l'horizon réel : quand AROME couvre une
+        // journée étiquetée « Prévision ARPEGE », elle bascule d'elle-même.
+        // Les étiquettes éditoriales (« Fenêtre 17h–19h »…) ne sont pas
+        // touchées.
+        if (tr && j.modele && j.modele !== 'inconnu') {
+          var pastille = tr.querySelector('.day-toggle .tag');
+          if (pastille && pastille.textContent.indexOf('Prévision') === 0) {
+            pastille.textContent = 'Prévision ' + j.modele;
+          }
+        }
+
         // Le risque combine le score météo du jour et l'activité mesurée du
         // feu aujourd'hui. Pour les jours à venir, cela revient à supposer
         // que le front reste aussi actif qu'à la dernière mesure — c'est une
