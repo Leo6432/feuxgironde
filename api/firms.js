@@ -104,6 +104,16 @@ async function recuperer(capteur, cle, jours) {
   }));
 }
 
+function parametreJours(req) {
+  if (req && req.query && req.query.jours) return String(req.query.jours);
+  try {
+    const url = new URL(req.url, 'http://x');
+    return url.searchParams.get('jours') || '';
+  } catch (e) {
+    return '';
+  }
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
 
@@ -113,7 +123,10 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const brut = (req.query && req.query.jours) || '';
+  // req.query n'est pas garanti selon la façon dont la fonction est invoquée ;
+  // s'y fier seul faisait retomber silencieusement sur la valeur par défaut
+  // (1 jour), donc sur une carte qui n'affichait que la journée en cours.
+  const brut = parametreJours(req);
   const jours = brut === 'max'
     ? joursDepuisDepart()
     : Math.min(JOURS_MAX, Math.max(1, parseInt(brut, 10) || JOURS_DEFAUT));

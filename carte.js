@@ -28,9 +28,14 @@
     return '#EBA92B';
   }
 
-  function rayon(frp) {
-    return Math.max(6, Math.min(20, 6 + Math.sqrt(frp || 0) * 2));
-  }
+  // Un pixel VIIRS couvre environ 375 m au sol. On dessine donc chaque
+  // détection à cette échelle, en mètres et non en pixels d'écran : les
+  // détections voisines se recouvrent et forment une zone continue, comme
+  // sur les cartes d'incendie habituelles, au lieu d'un semis de points.
+  // Le rayon ne varie pas avec la puissance : la surface couverte par une
+  // détection est la même quelle que soit son intensité, seule la couleur
+  // change.
+  var RAYON_M = 320;
 
   // Les heures FIRMS sont en UTC : on garde cette référence de bout en bout
   // plutôt que de convertir, pour que l'étiquette du curseur corresponde
@@ -71,6 +76,15 @@
     // Repère fixe : sans lui, une carte sans détection n'a aucun point d'ancrage.
     L.marker(SAUMOS).addTo(carte).bindPopup('<strong>Saumos</strong><br>Départ du feu, 22 juillet');
 
+    // Les polices web arrivent après le premier rendu et font glisser la mise
+    // en page : Leaflet garde alors la position qu'avait le conteneur au
+    // moment de l'initialisation, et le calque canvas se retrouve décalé de
+    // la hauteur gagnée. invalidateSize le recale sur la position réelle.
+    function recaler() { carte.invalidateSize({ animate: false }); }
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(recaler);
+    window.addEventListener('resize', recaler);
+    setTimeout(recaler, 400);
+
     // Deux calques distincts : la trace cumulée du feu (tout ce qui a brûlé
     // depuis le départ) en dessous, et les foyers encore chauds au moment
     // choisi par-dessus. Le second est toujours dessiné en dernier.
@@ -88,25 +102,26 @@
       calqueActif.clearLayers();
       var coords = [];
 
-      // Zone parcourue : gris sombre, petit et discret. C'est un fond, pas
-      // une alerte — ces foyers-là sont éteints.
+      // Zone parcourue : gris sombre, sans contour. Les disques se recouvrent
+      // et se lisent comme une surface, pas comme une alerte — ces foyers-là
+      // sont éteints.
       brules.forEach(function (p) {
         if (!isFinite(p.lat) || !isFinite(p.lon)) return;
-        L.circleMarker([p.lat, p.lon], {
-          radius: 5, color: '#4A4A55', fillColor: '#6B6B78',
-          fillOpacity: 0.35, weight: 0,
+        L.circle([p.lat, p.lon], {
+          radius: RAYON_M, color: '#3A3A44', fillColor: '#3A3A44',
+          fillOpacity: 0.28, weight: 0,
         }).bindPopup(bulle(p) + '<br><em>déjà parcouru</em>').addTo(calqueBrule);
         coords.push([p.lat, p.lon]);
       });
 
       actifs.forEach(function (p) {
         if (!isFinite(p.lat) || !isFinite(p.lon)) return;
-        L.circleMarker([p.lat, p.lon], {
-          radius: rayon(p.frp),
+        L.circle([p.lat, p.lon], {
+          radius: RAYON_M,
           color: couleur(p.frp),
           fillColor: couleur(p.frp),
-          fillOpacity: 0.5,
-          weight: 2,
+          fillOpacity: 0.55,
+          weight: 1,
         }).bindPopup(bulle(p)).addTo(calqueActif);
         coords.push([p.lat, p.lon]);
       });
