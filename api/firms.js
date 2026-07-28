@@ -72,8 +72,27 @@ function sansCle(message, cle) {
 // erreur de plateforme, que la page ne saurait pas expliquer.
 const DELAI_MS = 7000;
 
-async function recuperer(capteur, cle, jours) {
-  const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${cle}/${capteur}/${BBOX}/${jours}`;
+// Découpe une fenêtre longue en tranches de 3 jours au plus. Une requête de
+// 8 jours sur un feu de cette taille pèse des dizaines de milliers de lignes
+// et dépasse le délai ; trois tranches lancées en parallèle tiennent chacune
+// largement dedans. L'API FIRMS accepte une date de départ en fin d'URL.
+function decoupes(jours) {
+  if (jours <= 3) return [{ jours, date: null }];
+  const jourMs = 86400000;
+  const debut = Date.now() - (jours - 1) * jourMs;
+  const out = [];
+  for (let fait = 0; fait < jours; fait += 3) {
+    out.push({
+      jours: Math.min(3, jours - fait),
+      date: new Date(debut + fait * jourMs).toISOString().slice(0, 10),
+    });
+  }
+  return out;
+}
+
+async function recuperer(capteur, cle, jours, dateDebut) {
+  const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${cle}/${capteur}/${BBOX}/${jours}` +
+    (dateDebut ? `/${dateDebut}` : '');
   const stop = new AbortController();
   const minuteur = setTimeout(() => stop.abort(), DELAI_MS);
   let r;
@@ -144,9 +163,9 @@ module.exports = async (req, res) => {
   // Cache serveur : le cache CDN ne couvre qu'une région et repart de zéro à
   // chaque déploiement. Une fenêtre longue coûte cher côté FIRMS (deux
   // capteurs, plusieurs milliers de lignes), donc on la garde en Redis.
-  // v2 : la réponse transporte des cellules agrégées et non plus des points
-  // bruts — changer la clé évite de servir l'ancienne forme depuis le cache.
-  const cleCache = 'firms:v2:' + jours;
+  // v3 : les entrées v2 pouvaient contenir une réponse dégradée à 24 h mise
+  // en cache sous la clé de la fenêtre longue — on repart sur une clé neuve.
+  const cleCache = 'firms:v3:' + jours;
   let redis = null;
   try {
     const p = getClient();
@@ -163,25 +182,37 @@ module.exports = async (req, res) => {
     redis = null;   // le cache est un confort, jamais une dépendance
   }
 
-  async function essayer(n) {
-    const resultats = await Promise.allSettled(CAPTEURS.map((c) => recuperer(c, cle, n)));
-    const ok = resultats.filter((r) => r.status === 'fulfilled');
+  async function essayer(n, decouper) {
+    const morceaux = decouper ? decoupes(n) : [{ jours: n, date: null }];
+    const taches = [];
+    CAPTEURS.forEach((c) => morceaux.forEach((m) => taches.push(
+      recuperer(c, cle, m.jours, m.date).then(
+        (pts) => ({ ok: true, pts }),
+        (e) => ({ ok: false, err: sansCle(e && e.message, cle) })
+      )
+    )));
+    const resultats = await Promise.all(taches);
+    const ok = resultats.filter((r) => r.ok);
     return {
-      points: ok.flatMap((r) => r.value),
+      points: ok.flatMap((r) => r.pts),
       reussi: ok.length > 0,
-      erreurs: resultats
-        .filter((r) => r.status === 'rejected')
-        .map((r) => sansCle(r.reason && r.reason.message, cle)),
+      complet: ok.length === resultats.length,
+      erreurs: resultats.filter((r) => !r.ok).map((r) => r.err),
     };
   }
 
-  let tentative = await essayer(jours);
+  let tentative = await essayer(jours, true);
   let joursObtenus = jours;
 
-  // Une longue fenêtre est bien plus lourde côté FIRMS : si elle échoue,
-  // une journée vaut mieux que rien du tout.
+  // Si le découpage échoue en bloc (date de départ refusée, par exemple),
+  // on retente la fenêtre entière d'une seule pièce avant de se rabattre
+  // sur une seule journée — et chaque dégradation est annoncée, jamais tue.
+  if (!tentative.reussi && jours > 3) {
+    const entiere = await essayer(jours, false);
+    if (entiere.reussi) tentative = entiere;
+  }
   if (!tentative.reussi && jours > 1) {
-    const repli = await essayer(1);
+    const repli = await essayer(1, false);
     if (repli.reussi) {
       tentative = repli;
       joursObtenus = 1;
@@ -257,8 +288,10 @@ module.exports = async (req, res) => {
     fenetre: joursObtenus === 1 ? 'dernières 24h' : `derniers ${joursObtenus} jours`,
     jours: joursObtenus,
     depuis: DEPART_FEU,
-    // Signalé quand la fenêtre demandée n'a pas pu être servie en entier.
-    replique: joursObtenus !== jours ? `fenêtre réduite de ${jours} à ${joursObtenus} jour(s)` : undefined,
+    // Toute dégradation est annoncée : fenêtre réduite ou tranches manquantes.
+    avertissement: joursObtenus !== jours
+      ? `historique réduit à ${joursObtenus === 1 ? '24 h' : joursObtenus + ' jours'} — FIRMS n'a pas répondu sur la période complète`
+      : (!tentative.complet ? 'historique partiel — une partie des requêtes FIRMS a échoué' : undefined),
     total: enrichis.length,
     frpMax: enrichis.length ? Math.max(...enrichis.map((p) => p.frp)) : 0,
     // Somme des puissances : c'est l'énergie dégagée par l'ensemble du front,
@@ -270,10 +303,13 @@ module.exports = async (req, res) => {
     cellules,
   };
 
-  // 20 min : en dessous du rythme des passages satellite, donc on ne perd
-  // aucune détection en la servant depuis le cache.
+  // 20 min pour une réponse complète : sous le rythme des passages satellite,
+  // on ne perd aucune détection. Une réponse dégradée, elle, ne reste que
+  // 3 min — c'était le piège précédent : un seul dépassement de délai
+  // collait « 24 h seulement » à tous les visiteurs pendant 20 minutes.
   if (redis) {
-    try { await redis.set(cleCache, JSON.stringify(sortie), { EX: 1200 }); } catch (e) { /* tant pis */ }
+    const duree = sortie.avertissement ? 180 : 1200;
+    try { await redis.set(cleCache, JSON.stringify(sortie), { EX: duree }); } catch (e) { /* tant pis */ }
   }
 
   res.setHeader('X-Cache', redis ? 'miss' : 'none');

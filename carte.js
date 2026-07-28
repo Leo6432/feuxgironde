@@ -94,10 +94,14 @@
         });
 
         if (note) {
-          note.classList.remove('stale');
-          note.textContent = cellules.length
+          var texte = cellules.length
             ? d.total + ' détections sur ' + d.fenetre + ' — ' + d.source + '.'
             : 'Aucune détection par ' + d.source + ' sur ' + d.fenetre + '.';
+          // Une fenêtre incomplète reste signalée en ambre : un bandeau vert
+          // laisserait croire que l'historique affiché est le vrai total.
+          if (d.avertissement) texte += ' ' + d.avertissement + '.';
+          else note.classList.remove('stale');
+          note.textContent = texte;
         }
 
         if (!cellules.length) {
