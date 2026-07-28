@@ -5,8 +5,16 @@ from meteo import JOURS, DERNIERE_PLUIE, PRECIP
 def norm(v, lo, hi):
     return max(0.0, min(100.0, (v - lo) / (hi - lo) * 100))
 
-# Poids des composantes horaires (somme = 1)
-POIDS = {"temp":0.25, "hum":0.30, "rafales":0.20, "vent":0.10, "instab":0.15}
+# Composantes additives : les moteurs propres du feu (somme = 1).
+# L'instabilité n'en fait plus partie — voir COEF_INSTAB plus bas.
+POIDS = {"temp":0.29, "hum":0.35, "rafales":0.24, "vent":0.12}
+
+# L'instabilité atmosphérique n'allume rien toute seule : elle amplifie un
+# feu qui a déjà de l'énergie. Un terme additif gonflerait une journée calme
+# surmontée d'un ciel instable, ce qui est faux. On l'applique donc en
+# multiplicateur, si bien qu'elle pèse beaucoup sur une journée sévère et
+# presque rien sur une journée bénigne.
+INSTAB_MAX = 1.15
 
 def composantes(heures, i, nom=None):
     """Les 5 composantes 0-100 pour l'heure i."""
@@ -31,15 +39,19 @@ def composantes(heures, i, nom=None):
 
 def score_horaire(heures, i, nom=None):
     c = composantes(heures, i, nom)
-    return sum(POIDS[k] * c[k] for k in POIDS)
+    base = sum(POIDS[k] * c[k] for k in POIDS)
+    coef = 1 + (INSTAB_MAX - 1) * c["instab"] / 100
+    return base * coef
 
 def coef_secheresse(jour_num):
-    """Multiplicateur selon les jours écoulés depuis la dernière pluie."""
-    d = jour_num - DERNIERE_PLUIE
-    if d <= 1:  return 0.90
-    if d <= 3:  return 1.00
-    if d <= 6:  return 1.08
-    return 1.15
+    """Multiplicateur selon les jours écoulés depuis la dernière pluie.
+
+    Continu : par paliers, un jour d'écart faisait sauter le coefficient de
+    8 %, ce qui creusait un fossé artificiel entre deux journées voisines.
+    0,90 au lendemain d'une pluie, 1,00 à trois jours, plafonné à 1,15.
+    """
+    d = max(0, jour_num - DERNIERE_PLUIE)
+    return round(min(1.15, 0.90 + 0.0333 * d), 3)
 
 def coef_nuit(heures):
     """Le feu ne se couche pas si l'air ne se réhumidifie pas la nuit."""

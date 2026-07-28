@@ -76,20 +76,23 @@
 
     <p><strong>Le calcul se fait heure par heure, pas sur les extrêmes du jour.</strong> C’est le point important. Prendre séparément la température maximale, l’humidité minimale et la rafale maximale revient à fabriquer une heure qui n’existe pas. Mercredi 29 en est l’exemple : les 42 °C tombent à 17h avec seulement 15 km/h de vent, et les 45 km/h arrivent à 18h quand il ne fait plus que 40 °C. Aucune heure ne réunit les trois. Le score retenu est donc celui de <strong>la pire heure réelle</strong> de la journée.</p>
 
-    <p><strong>Cinq composantes</strong>, chacune ramenée sur 0 à 100, calculées pour chaque heure :<br>
-    — <strong>température</strong> (25 %), de 15 °C à 42 °C ;<br>
-    — <strong>humidité</strong> (30 %), de 80 % à 15 %, inversée : c’est elle qui commande la disponibilité du combustible ;<br>
-    — <strong>rafales</strong> (20 %), de 0 à 60 km/h ;<br>
-    — <strong>vent moyen</strong> (10 %), de 0 à 30 km/h : le vent soutenu pousse le front, là où la rafale projette des brandons ;<br>
-    — <strong>instabilité</strong> (15 %), approchée par la chute de pression sur six heures, de 0 à 5 hPa, et <strong>uniquement par temps sec</strong> : une baisse de pression accompagnée de pluie signale un front humide, qui calme le feu au lieu de l’exciter, et n’est donc pas comptée.</p>
+    <p><strong>Quatre composantes s’additionnent</strong> — ce sont les moteurs propres du feu. Chacune est ramenée sur 0 à 100, pour chaque heure :<br>
+    — <strong>humidité</strong> (35 %), de 80 % à 15 %, inversée : c’est elle qui commande la disponibilité du combustible ;<br>
+    — <strong>température</strong> (29 %), de 15 °C à 42 °C ;<br>
+    — <strong>rafales</strong> (24 %), de 0 à 60 km/h ;<br>
+    — <strong>vent moyen</strong> (12 %), de 0 à 30 km/h : le vent soutenu pousse le front, là où la rafale projette des brandons.</p>
 
-    <p class="notice"><strong>La limite connue de ce score.</strong> L’instabilité atmosphérique est le paramètre qui déclenche réellement un pyrocumulonimbus, et la pression de surface n’en est qu’un indicateur indirect. Les vraies mesures seraient la <strong>CAPE</strong>, l’indice de soulèvement, la sécheresse de l’air en altitude et le cisaillement du vent — aucune n’est disponible dans les relevés utilisés ici. Cette composante est donc la plus fragile des cinq, et c’est le premier point que ce suivi cherchera à améliorer.</p>
+    <p><strong>Trois coefficients multiplient ensuite ce total</strong>, parce qu’ils n’agissent pas seuls mais amplifient ce que le feu fait déjà :</p>
 
-    <p>Deux <strong>coefficients journaliers</strong> s’appliquent ensuite :<br>
-    — <strong>sécheresse cumulée</strong> : ×0,90 au lendemain d’une pluie, ×1,00 à deux ou trois jours, ×1,08 à moins d’une semaine, ×1,15 au-delà. Sans lui, une journée chaude après un orage et la même après trois semaines de sec donneraient le même score, ce qui n’a pas de sens pour du combustible forestier. La dernière pluie mesurable remonte au dimanche 26 juillet.<br>
-    — <strong>récupération nocturne</strong> : ×1,05 quand l’humidité ne remonte pas au-dessus de 60 % pendant la nuit. Un feu qui ne se couche pas repart plus vite le lendemain.</p>
+    <p>— <strong>instabilité atmosphérique</strong>, jusqu’à ×1,15. Mesurée par la <strong>CAPE</strong> quand elle est disponible, sinon approchée par la chute de pression sur six heures, et jamais comptée sous la pluie : une baisse de pression accompagnée de précipitations signale un front humide, qui calme le feu au lieu de l’exciter. <em>Pourquoi un multiplicateur et non une composante ?</em> Parce qu’une atmosphère instable au-dessus d’un feu calme ne produit rien. Additionnée, l’instabilité gonflerait une journée bénigne ; multipliée, elle ajoute 4 points à une journée à 30 et 13 points à une journée à 85 — ce qui correspond au phénomène réel.</p>
 
-    <p>Exemple sur mercredi 29, à 18h, l’heure la plus difficile : température 93, humidité 92, rafales 75, vent moyen 67, instabilité 60. Le score brut est 0,25 × 93 + 0,30 × 92 + 0,20 × 75 + 0,10 × 67 + 0,15 × 60 = 82. La sécheresse est à ×1,00 (trois jours depuis la pluie) et la nuit à ×1,00, donc le score final est <strong>82</strong>.</p>
+    <p>— <strong>sécheresse cumulée</strong>, de ×0,90 au lendemain d’une pluie à ×1,15 au-delà d’une semaine, de façon continue. Sans elle, une journée chaude après un orage et la même après trois semaines de sec donneraient le même score, ce qui n’a pas de sens pour du combustible forestier. Dernière pluie mesurable : dimanche 26 juillet.</p>
+
+    <p>— <strong>récupération nocturne</strong>, ×1,05 quand l’humidité ne remonte pas au-dessus de 60 % pendant la nuit. Un feu qui ne se couche pas repart plus vite le lendemain.</p>
+
+    <p>Exemple sur mercredi 29, à 18h, l’heure la plus difficile : humidité 92, température 93, rafales 75, vent moyen 67. Le total additif est 0,35 × 92 + 0,29 × 93 + 0,24 × 75 + 0,12 × 67 = 85. L’instabilité à 60/100 donne ×1,09, la sécheresse ×1,00 (trois jours depuis la pluie), la nuit ×1,00. Score final : <strong>93</strong>.</p>
+
+    <p class="notice"><strong>Ce que ce score n’est pas.</strong> La CAPE dit qu’une atmosphère est favorable à la convection, pas qu’un incendie donné produira un pyrocumulonimbus — cela dépend aussi de l’intensité du feu lui-même, que ce calcul ne mesure pas. Manquent également la sécheresse de l’air en altitude et le cisaillement du vent. C’est un indice maison de difficulté opérationnelle, pas un indice de risque validé scientifiquement.</p>
 
     <h3>Comment le risque est calculé</h3>
     <p>Le feu ne grandit pas régulièrement. Il stagne pendant des heures, puis saute d’environ 10 000 hectares en une soirée quand un pyrocumulonimbus se forme au-dessus du front. Cette dynamique en marches d’escalier est visible sur les deux orages de feu du 24 et du 25 juillet.</p>

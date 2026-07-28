@@ -22,12 +22,21 @@ const VARIABLES = [
   'cape',
 ].join(',');
 
-const URL =
+// AROME couvre ~2 jours, ARPEGE ~4. Au-delà, meteofrance_seamless n'a plus
+// rien à renvoyer : on complète avec best_match, qui bascule sur l'IFS du
+// CEPMMT en longue échéance. Chaque journée retient la source qui l'a fournie.
+const url = (modeles, jours) =>
   `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}` +
-  `&hourly=${VARIABLES}&models=meteofrance_seamless&wind_speed_unit=kmh` +
-  `&timezone=Europe%2FParis&forecast_days=5`;
+  `&hourly=${VARIABLES}&models=${modeles}&wind_speed_unit=kmh` +
+  `&timezone=Europe%2FParis&forecast_days=${jours}`;
 
-const POIDS = { temp: 0.25, hum: 0.30, rafales: 0.20, vent: 0.10, instab: 0.15 };
+// Composantes additives : les moteurs propres du feu (somme = 1).
+const POIDS = { temp: 0.29, hum: 0.35, rafales: 0.24, vent: 0.12 };
+
+// L'instabilité n'allume rien seule : elle amplifie un feu qui a déjà de
+// l'énergie. En multiplicateur elle pèse lourd sur une journée sévère et
+// presque rien sur une journée calme — ce qu'un terme additif ne fait pas.
+const INSTAB_MAX = 1.15;
 
 const norm = (v, lo, hi) =>
   Math.max(0, Math.min(100, ((v - lo) / (hi - lo)) * 100));
@@ -50,29 +59,65 @@ function instabilite(cape, pressions, i, pluie6h) {
   return norm(chute, 0, 5);
 }
 
+// Continu : par paliers, un jour d'écart faisait sauter le coefficient de 8 %.
 function coefSecheresse(joursSansPluie) {
-  if (joursSansPluie <= 1) return 0.90;
-  if (joursSansPluie <= 3) return 1.00;
-  if (joursSansPluie <= 6) return 1.08;
-  return 1.15;
+  return Math.min(1.15, 0.90 + 0.0333 * Math.max(0, joursSansPluie));
+}
+
+async function recuperer(modeles, jours) {
+  const r = await fetch(url(modeles, jours));
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const d = await r.json();
+  if (!d || !d.hourly || !Array.isArray(d.hourly.time) || !d.hourly.time.length) {
+    throw new Error('réponse inattendue');
+  }
+  return d.hourly;
+}
+
+/** Une heure n'est exploitable que si les quatre moteurs du feu sont présents. */
+function heureComplete(h, i) {
+  return ['temperature_2m', 'relative_humidity_2m', 'wind_speed_10m', 'wind_gusts_10m']
+    .every((k) => Number.isFinite((h[k] || [])[i]));
 }
 
 module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
 
-  let data;
-  try {
-    const r = await fetch(URL);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    data = await r.json();
-  } catch (e) {
+  // Météo-France d'abord, puis le repli longue échéance pour les journées
+  // que ni AROME ni ARPEGE ne couvrent.
+  let mf = null, gl = null;
+  try { mf = await recuperer('meteofrance_seamless', 4); } catch (e) { /* repli */ }
+  try { gl = await recuperer('best_match', 7); } catch (e) { /* repli */ }
+
+  if (!mf && !gl) {
     res.status(200).json({ ok: false, raison: 'API injoignable' });
     return;
   }
 
-  const h = data && data.hourly;
-  if (!h || !Array.isArray(h.time) || !h.time.length) {
-    res.status(200).json({ ok: false, raison: 'réponse inattendue' });
+  // Fusion : chaque heure prend Météo-France si elle est complète, sinon le
+  // modèle global. On garde la trace de la source pour l'afficher.
+  const base = mf || gl;
+  const h = {};
+  const CLES = ['time', 'temperature_2m', 'relative_humidity_2m', 'wind_speed_10m',
+                'wind_gusts_10m', 'precipitation', 'surface_pressure', 'cape'];
+  CLES.forEach((k) => { h[k] = []; });
+  const sourceParDate = {};
+
+  base.time.forEach((iso, i) => {
+    let src = null;
+    if (mf && mf.time[i] === iso && heureComplete(mf, i)) src = { d: mf, i, nom: 'Météo-France' };
+    else if (gl) {
+      const j = gl.time.indexOf(iso);
+      if (j !== -1 && heureComplete(gl, j)) src = { d: gl, i: j, nom: 'modèle global' };
+    }
+    if (!src) return;
+    CLES.forEach((k) => { h[k].push(k === 'time' ? iso : (src.d[k] || [])[src.i]); });
+    const date = iso.split('T')[0];
+    if (!sourceParDate[date]) sourceParDate[date] = src.nom;
+  });
+
+  if (!h.time.length) {
+    res.status(200).json({ ok: false, raison: 'aucune heure exploitable' });
     return;
   }
 
@@ -111,7 +156,8 @@ module.exports = async (req, res) => {
         vent: norm(V[i], 0, 30),
         instab: instabilite(CA[i], PR, i, pluie6h),
       };
-      return Object.keys(POIDS).reduce((s, k) => s + POIDS[k] * c[k], 0);
+      const base = Object.keys(POIDS).reduce((s, k) => s + POIDS[k] * c[k], 0);
+      return base * (1 + (INSTAB_MAX - 1) * c.instab / 100);
     });
 
     // Sécheresse : nombre de jours depuis la dernière pluie relevée.
@@ -145,15 +191,17 @@ module.exports = async (req, res) => {
       date,
       score: Math.min(100, Math.round(scores[pire] * cs * cn)),
       pireHeure: heures[pire].heure,
-      secheresse: cs,
+      secheresse: Math.round(cs * 1000) / 1000,
       nuit: cn,
+      modele: sourceParDate[date] || 'inconnu',
       periodes,
     });
   }
 
+  const modeles = [...new Set(Object.values(sourceParDate))];
   res.status(200).json({
     ok: true,
-    source: 'Open-Meteo · modèles Météo-France AROME et ARPEGE',
+    source: 'Open-Meteo · ' + modeles.join(' puis '),
     instabilite: capeDispo ? 'CAPE mesurée' : 'repli sur la pression de surface',
     jours: sortie,
   });
