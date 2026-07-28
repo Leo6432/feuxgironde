@@ -222,14 +222,15 @@
         var sud = latMin - marge, nord = latMax + marge;
         var ouest = lonMin - marge, est = lonMax + marge;
 
-        // Résolution du canvas : ~9 px par pas de grille pour que les disques
-        // aient de quoi s'arrondir, plafonnée pour ménager la mémoire. La
-        // hauteur compense l'étirement Mercator des latitudes, afin que les
-        // pixels du canvas restent carrés à l'écran.
+        // Résolution du canvas : ~13 px par pas de grille pour que les disques
+        // aient de quoi s'arrondir et restent nets une fois étirés au zoom,
+        // plafonnée pour ménager la mémoire. La hauteur compense l'étirement
+        // Mercator des latitudes, afin que les pixels du canvas restent
+        // carrés à l'écran.
         var cosLat = Math.cos(SAUMOS[0] * Math.PI / 180);
-        var largeur = Math.max(64, Math.min(2000, Math.round((est - ouest) / grille * 9)));
+        var largeur = Math.max(64, Math.min(2400, Math.round((est - ouest) / grille * 13)));
         var echelleX = largeur / (est - ouest);
-        var hauteur = Math.max(64, Math.min(2600, Math.round((nord - sud) * echelleX / cosLat)));
+        var hauteur = Math.max(64, Math.min(3200, Math.round((nord - sud) * echelleX / cosLat)));
         var echelleY = hauteur / (nord - sud);
 
         cellules.forEach(function (c) {
@@ -274,7 +275,7 @@
         // pas en longitude.
         var rx = grille * echelleX * 0.72, ry = grille * echelleY * 0.72;
         var rxA = rx * 1.12, ryA = ry * 1.12;   // foyers actifs un peu plus amples
-        var flou = Math.max(1.2, rx * 0.3);
+        var flou = Math.max(1.2, rx * 0.22);
 
         var debut = Infinity, fin = -Infinity;
         cellules.forEach(function (c) {
@@ -327,15 +328,16 @@
 
           // Peindre opaque puis composer avec une opacité globale : deux
           // disques qui se chevauchent gardent une teinte uniforme, là où des
-          // formes semi-transparentes se surimprimeraient en plus foncé. Le
-          // léger flou fond les disques entre eux.
+          // formes semi-transparentes se surimprimeraient en plus foncé. Seule
+          // la zone brûlée est légèrement floutée, pour fondre les disques en
+          // une nappe continue ; les foyers actifs restent nets.
           ctxAffiche.clearRect(0, 0, largeur, hauteur);
           ctxAffiche.filter = 'blur(' + flou + 'px)';
           ctxAffiche.globalAlpha = 0.66;
           ctxAffiche.drawImage(cnvBrule, 0, 0);
+          ctxAffiche.filter = 'none';
           ctxAffiche.globalAlpha = 0.86;
           ctxAffiche.drawImage(cnvActif, 0, 0);
-          ctxAffiche.filter = 'none';
           ctxAffiche.globalAlpha = 1;
 
           if (etiquette) {
