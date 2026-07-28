@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carte satellite des foyers actifs — Feux Gironde</title>
+<meta name="description" content="Carte en direct des foyers actifs détectés par satellite autour de l'incendie de Saumos en Gironde, d'après les données NASA FIRMS (VIIRS).">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#1B2A6B">
+<link rel="canonical" href="https://feuxgironde.vercel.app/carte.html">
+
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Feux Gironde">
+<meta property="og:locale" content="fr_FR">
+<meta property="og:url" content="https://feuxgironde.vercel.app/carte.html">
+<meta property="og:title" content="Carte satellite des foyers actifs — Feux Gironde">
+<meta property="og:description" content="Les foyers encore chauds détectés par les satellites VIIRS autour de Saumos, mis à jour en continu.">
+<meta property="og:image" content="https://feuxgironde.vercel.app/og-image.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://feuxgironde.vercel.app/og-image.jpg">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div class="tricolore"><i></i><i></i><i></i></div>
+
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="logo" href="/">
+      <span class="logo-name">Feux Gironde</span>
+      <span class="logo-sub">Suivi indépendant · incendie de Saumos</span>
+    </a>
+    <nav class="nav">
+      <a href="/">Accueil</a>
+      <a href="/carte.html" aria-current="page">Carte</a>
+      <a href="/progression.html">Progression</a>
+      <a href="/previsions.html">Prévisions</a>
+      <a href="/analyse.html">Analyse</a>
+    </nav>
+  </div>
+</header>
+
+<div class="container page-head">
+  <span class="kicker">Données NASA FIRMS · satellites VIIRS</span>
+  <h1>Foyers actifs en direct</h1>
+  <p class="measure">Chaque point est une <strong>détection thermique</strong> : un endroit où un satellite a mesuré une chaleur anormale en survolant la zone au cours des dernières 24 heures. Ce n’est pas le périmètre de l’incendie, et ce n’est pas une carte officielle des secours.</p>
+</div>
+
+<section class="section" style="padding-top:0">
+  <div class="container">
+
+    <p id="fg-carte-note" class="live-note stale">Chargement des détections satellite…</p>
+
+    <div id="fg-map" class="map-shell" role="img" aria-label="Carte des foyers actifs détectés par satellite autour de Saumos"></div>
+
+    <div class="map-legend">
+      <span><i style="background:#CE1B26"></i> Forte puissance (≥ 30 MW)</span>
+      <span><i style="background:#E8761B"></i> Moyenne (10–30 MW)</span>
+      <span><i style="background:#EBA92B"></i> Faible (&lt; 10 MW)</span>
+    </div>
+
+    <div class="marks" style="margin-top:28px">
+      <div class="mark">
+        <div class="mark-k">Foyers détectés (24h)</div>
+        <div class="mark-v" id="fg-carte-total">—</div>
+      </div>
+      <div class="mark">
+        <div class="mark-k">Puissance radiative max</div>
+        <div class="mark-v" id="fg-carte-frp">—</div>
+      </div>
+      <div class="mark">
+        <div class="mark-k">Dernière détection</div>
+        <div class="mark-v" id="fg-carte-derniere">—</div>
+      </div>
+    </div>
+
+    <p class="notice" style="margin-top:32px">
+      <strong>Comment lire cette carte.</strong> Un satellite ne voit la zone que lors de ses passages, quelques fois par jour : <strong>l’absence de point ne signifie pas l’absence de feu</strong>, seulement qu’aucune chaleur n’a été détectée lors du dernier survol, ou que les nuages et la fumée ont masqué le sol. À l’inverse, un point peut correspondre à une autre source de chaleur que l’incendie. La puissance radiative (FRP, en mégawatts) donne une idée de l’intensité du foyer au moment de la mesure. Carte complète et archives sur <a href="https://firms.modaps.eosdis.nasa.gov/map/" rel="noopener">le site NASA FIRMS</a>.
+    </p>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <div>
+      <h4>À propos de ce suivi</h4>
+      <p>Feux Gironde est un suivi <strong>indépendant</strong> de l’incendie parti de Saumos le 22 juillet 2026. Ce site n’est ni un service de l’État, ni un organisme officiel, et ne diffuse aucune consigne de sécurité.</p>
+      <p>En cas d’urgence, appelez le <strong>18</strong> ou le <strong>112</strong>. Suivez les consignes de la préfecture de la Gironde.</p>
+    </div>
+    <div>
+      <h4>Sources</h4>
+      <ul class="footer-links">
+        <li>Préfecture de la Gironde &amp; ministère de l’Intérieur — surfaces et moyens</li>
+        <li>Météociel — modèles AROME et ARPEGE</li>
+        <li>NASA FIRMS — détections satellite de foyers actifs</li>
+        <li>Fonds de carte © OpenStreetMap</li>
+        <li><a href="/analyse.html">Méthode et limites du suivi</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="container footer-warn">
+    Les projections de surface et les pourcentages de risque d’orage de feu sont des <strong>estimations personnelles</strong> établies à partir du comportement observé du feu. Ce ne sont pas des indices officiels et elles n’engagent aucune autorité publique.
+  </div>
+</footer>
+
+<button id="fg-stats-btn" aria-label="Statistiques de visite"></button>
+<div id="fg-stats-panel" hidden>
+  <div class="fg-row"><span>En direct</span><b id="fg-s-live">—</b></div>
+  <div class="fg-row"><span>24 heures</span><b id="fg-s-24h">—</b></div>
+  <div class="fg-row"><span>7 jours</span><b id="fg-s-7d">—</b></div>
+  <div class="fg-row"><span>Depuis toujours</span><b id="fg-s-all">—</b></div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+<script src="/carte.js" defer></script>
+<script src="/stats.js" defer></script>
+
+</body>
+</html>
