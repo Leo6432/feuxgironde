@@ -48,15 +48,37 @@ function parseCsv(texte) {
   });
 }
 
+// La clé est dans l'URL : sans ce nettoyage, un message d'erreur qui cite
+// l'URL la publierait dans la réponse JSON, lisible par n'importe qui.
+function sansCle(message, cle) {
+  return String(message || 'erreur inconnue').split(cle).join('CLE').slice(0, 160);
+}
+
+// Au-delà de quelques secondes, mieux vaut renoncer proprement que laisser
+// la fonction serverless atteindre son propre délai maximal et renvoyer une
+// erreur de plateforme, que la page ne saurait pas expliquer.
+const DELAI_MS = 7000;
+
 async function recuperer(capteur, cle, jours) {
   const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${cle}/${capteur}/${BBOX}/${jours}`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const stop = new AbortController();
+  const minuteur = setTimeout(() => stop.abort(), DELAI_MS);
+  let r;
+  try {
+    r = await fetch(url, { signal: stop.signal });
+  } catch (e) {
+    throw new Error(e.name === 'AbortError'
+      ? `${capteur}: délai dépassé (${DELAI_MS / 1000}s)`
+      : `${capteur}: ${sansCle(e.message, cle)}`);
+  } finally {
+    clearTimeout(minuteur);
+  }
+  if (!r.ok) throw new Error(`${capteur}: HTTP ${r.status}`);
   const texte = await r.text();
   // FIRMS répond en 200 avec un message texte (pas du CSV) sur clé invalide
   // ou quota dépassé — on le détecte pour ne pas planter le parsing.
   if (/invalid|error|exceed/i.test(texte.slice(0, 200))) {
-    throw new Error('réponse FIRMS: ' + texte.slice(0, 120));
+    throw new Error(`${capteur}: ${sansCle(texte.slice(0, 120), cle)}`);
   }
   return parseCsv(texte).map((l) => ({
     lat: parseFloat(l.latitude),
@@ -81,17 +103,41 @@ module.exports = async (req, res) => {
   const demande = parseInt((req.query && req.query.jours) || '', 10);
   const jours = Math.min(JOURS_MAX, Math.max(1, demande || JOURS_DEFAUT));
 
-  let points = [];
-  try {
-    const resultats = await Promise.allSettled(CAPTEURS.map((c) => recuperer(c, cle, jours)));
-    points = resultats.filter((r) => r.status === 'fulfilled').flatMap((r) => r.value);
-    if (!resultats.some((r) => r.status === 'fulfilled')) {
-      throw new Error('tous les capteurs ont échoué');
+  async function essayer(n) {
+    const resultats = await Promise.allSettled(CAPTEURS.map((c) => recuperer(c, cle, n)));
+    const ok = resultats.filter((r) => r.status === 'fulfilled');
+    return {
+      points: ok.flatMap((r) => r.value),
+      reussi: ok.length > 0,
+      erreurs: resultats
+        .filter((r) => r.status === 'rejected')
+        .map((r) => sansCle(r.reason && r.reason.message, cle)),
+    };
+  }
+
+  let tentative = await essayer(jours);
+  let joursObtenus = jours;
+
+  // Une longue fenêtre est bien plus lourde côté FIRMS : si elle échoue,
+  // une journée vaut mieux que rien du tout.
+  if (!tentative.reussi && jours > 1) {
+    const repli = await essayer(1);
+    if (repli.reussi) {
+      tentative = repli;
+      joursObtenus = 1;
     }
-  } catch (e) {
-    res.status(200).json({ ok: false, raison: 'API FIRMS injoignable' });
+  }
+
+  if (!tentative.reussi) {
+    res.status(200).json({
+      ok: false,
+      raison: 'API FIRMS injoignable',
+      details: tentative.erreurs,
+    });
     return;
   }
+
+  const points = tentative.points;
 
   const enrichis = points
     .map((p) => ({ ...p, distanceKm: Math.round(distanceKm(LAT, LON, p.lat, p.lon)) }))
@@ -116,8 +162,10 @@ module.exports = async (req, res) => {
   res.status(200).json({
     ok: true,
     source: 'NASA FIRMS · VIIRS (SNPP + NOAA-20)',
-    fenetre: jours === 1 ? 'dernières 24h' : `derniers ${jours} jours`,
-    jours,
+    fenetre: joursObtenus === 1 ? 'dernières 24h' : `derniers ${joursObtenus} jours`,
+    jours: joursObtenus,
+    // Signalé quand la fenêtre demandée n'a pas pu être servie en entier.
+    replique: joursObtenus !== jours ? `fenêtre réduite de ${jours} à ${joursObtenus} jour(s)` : undefined,
     total: enrichis.length,
     frpMax: enrichis.length ? Math.max(...enrichis.map((p) => p.frp)) : 0,
     // Somme des puissances : c'est l'énergie dégagée par l'ensemble du front,
