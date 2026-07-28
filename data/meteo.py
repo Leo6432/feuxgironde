@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Relevés horaires Météociel — (heure, T °C, humidité %, vent moyen, rafales, pression hPa)."""
+"""Relevés horaires Météociel — (heure, T °C, humidité %, vent moyen, rafales, pression hPa).
+
+La colonne « sur 1h » de Météociel est à « -- » sur tous les runs en cours :
+aucune précipitation d'ici vendredi 31. PRECIP le consigne explicitement,
+car l'instabilité ne doit compter que par temps sec (voir indice.py)."""
+
+# mm de pluie par heure, par jour. 0 partout tant que les runs ne donnent rien.
+PRECIP = {j: [0.0]*24 for j in ("Mar 28","Mer 29","Jeu 30","Ven 31")}
 
 JOURS = {
 "Mar 28": {"modele":"AROME","h":[
