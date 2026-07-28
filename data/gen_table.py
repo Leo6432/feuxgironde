@@ -4,13 +4,13 @@ from indice import analyse
 
 META = {
  "Mar 28": dict(num=28, id="mar28", date="2026-07-28", tag="En cours",         tagc="tag-red",  risque=40, lvl="mid",
-                proj="42 000 – 51 000 ha", peak=False),
+                proj="43 000 ha (confirmé, 20h00)", peak=False),
  "Mer 29": dict(num=29, id="mer29", date="2026-07-29", tag="Fenêtre 17h–19h",  tagc="tag-red",  risque=75, lvl="hi",
-                proj="50 000 – 68 000 ha", peak=True),
+                proj="43 000 – 56 000 ha", peak=True),
  "Jeu 30": dict(num=30, id="jeu30", date="2026-07-30", tag="Prévision ARPEGE", tagc="tag-blue", risque=10, lvl="lo",
-                proj="Accalmie, mais toujours aucune pluie · 51 000 – 69 000 ha", peak=False),
+                proj="Accalmie, mais toujours aucune pluie · 43 000 – 58 000 ha", peak=False),
  "Ven 31": dict(num=31, id="ven31", date="2026-07-31", tag="Prévision ARPEGE", tagc="tag-blue", risque=8,  lvl="lo",
-                proj="52 000 – 70 000 ha", peak=False),
+                proj="43 000 – 59 000 ha", peak=False),
 }
 
 def fr(x):
