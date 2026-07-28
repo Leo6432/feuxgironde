@@ -39,8 +39,21 @@
       var maj = 0;
 
       d.jours.forEach(function (j) {
-        var ligne = table.querySelector('tr[data-date="' + j.date + '"] .js-diff');
+        var tr = table.querySelector('tr[data-date="' + j.date + '"]');
+        var ligne = tr && tr.querySelector('.js-diff');
         if (ligne) { poser(ligne, j.score); maj++; }
+
+        // Les colonnes météo affichées suivent aussi le dernier run : sans
+        // ça le tableau montrerait des relevés figés à côté d'un score frais.
+        if (tr && j.periodes && j.periodes.length) {
+          var tMax = Math.max.apply(null, j.periodes.map(function (p) { return p.t; }));
+          var hMin = Math.min.apply(null, j.periodes.map(function (p) { return p.hum; }));
+          var gMax = Math.max.apply(null, j.periodes.map(function (p) { return p.raf; }));
+          var cel = tr.querySelectorAll('td');
+          if (cel[1]) cel[1].textContent = Math.round(tMax) + ' °C';
+          if (cel[2]) cel[2].textContent = Math.round(hMin) + ' %';
+          if (cel[3]) cel[3].textContent = Math.round(gMax) + ' km/h';
+        }
 
         var detail = table.querySelector('tr.day-detail[data-date="' + j.date + '"]');
         if (!detail || !j.periodes) return;
