@@ -35,6 +35,30 @@
     return d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
   }
 
+  // Un satellite ne survole la zone que quelques fois par jour. Découper le
+  // temps en survols plutôt qu'en journées donne des crans qui correspondent
+  // à de vraies mesures, au lieu de crans vides entre deux passages.
+  function passages(points) {
+    var par = {};
+    points.forEach(function (p) {
+      var heure = (p.heure || '').split('h')[0];
+      var cle = p.date + ' ' + heure;
+      if (!par[cle]) {
+        par[cle] = { cle: cle, date: p.date, heure: heure, points: [], frpTotal: 0, frpMax: 0 };
+      }
+      var g = par[cle];
+      g.points.push(p);
+      g.frpTotal += p.frp || 0;
+      g.frpMax = Math.max(g.frpMax, p.frp || 0);
+    });
+    return Object.keys(par).sort().map(function (k) {
+      var g = par[k];
+      g.frpTotal = Math.round(g.frpTotal);
+      g.frpMax = Math.round(g.frpMax);
+      return g;
+    });
+  }
+
   function attendreLeaflet(essais, suite) {
     if (window.L) { suite(); return; }
     if (essais <= 0) { echec('La carte n’a pas pu être chargée.'); return; }
@@ -107,23 +131,23 @@
         chiffres(d.total, d.frpMax, d.derniereDetection);
         dessiner(d.points || [], true);
 
-        var jours = d.parJour || [];
+        var survols = passages(d.points || []);
         var curseur = document.getElementById('fg-time-range');
         var bloc = document.getElementById('fg-time');
-        // Un seul jour de données ne mérite pas un curseur.
-        if (!curseur || !bloc || jours.length < 2) return;
+        // Un seul survol ne mérite pas un curseur.
+        if (!curseur || !bloc || survols.length < 2) return;
 
-        // Le dernier cran affiche la période entière plutôt qu'une journée :
+        // Le dernier cran affiche la période entière plutôt qu'un survol :
         // c'est l'état par défaut de la carte, et ça évite d'avoir à revenir
         // en arrière pour retrouver la vue d'ensemble.
-        var crans = jours.length;
+        var crans = survols.length;
         curseur.max = String(crans);
         curseur.value = String(crans);
         bloc.removeAttribute('hidden');
 
         var minLab = document.getElementById('fg-time-min');
         var maxLab = document.getElementById('fg-time-max');
-        if (minLab) minLab.textContent = jourFr(jours[0].date);
+        if (minLab) minLab.textContent = jourFr(survols[0].date) + ' · ' + survols[0].heure + 'h';
         if (maxLab) maxLab.textContent = 'Tout';
 
         var etiquette = document.getElementById('fg-time-label');
@@ -136,14 +160,13 @@
             chiffres(d.total, d.frpMax, d.derniereDetection);
             return;
           }
-          var jour = jours[i];
-          var pts = (d.points || []).filter(function (p) { return p.date === jour.date; });
+          var s = survols[i];
           if (etiquette) {
-            etiquette.textContent = jourFr(jour.date) + ' — ' + jour.total +
-              ' détection' + (jour.total > 1 ? 's' : '') + ', ' + jour.frpTotal + ' MW cumulés';
+            etiquette.textContent = jourFr(s.date) + ' · ' + s.heure + 'h — ' + s.points.length +
+              ' détection' + (s.points.length > 1 ? 's' : '') + ', ' + s.frpTotal + ' MW';
           }
-          dessiner(pts, false);
-          chiffres(jour.total, jour.frpMax, pts[0] ? jour.date + ' ' + pts[0].heure : '—');
+          dessiner(s.points, false);
+          chiffres(s.points.length, s.frpMax, s.date + ' ' + s.heure + 'h');
         }
 
         curseur.addEventListener('input', afficher);
