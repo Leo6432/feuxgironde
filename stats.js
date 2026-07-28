@@ -1,3 +1,18 @@
+// Lignes de jour dépliables du tableau des prévisions.
+(function () {
+  var boutons = document.querySelectorAll('.day-toggle');
+  Array.prototype.forEach.call(boutons, function (btn) {
+    btn.addEventListener('click', function () {
+      var cible = document.getElementById(btn.getAttribute('aria-controls'));
+      if (!cible) return;
+      var ouvert = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', ouvert ? 'false' : 'true');
+      if (ouvert) { cible.setAttribute('hidden', ''); }
+      else { cible.removeAttribute('hidden'); }
+    });
+  });
+})();
+
 // Compteur de visites : signale la présence du visiteur et affiche
 // les totaux dans le petit panneau discret en bas à droite.
 (function () {

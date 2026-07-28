@@ -72,13 +72,22 @@
 <section class="section section-alt">
   <div class="container prose">
     <h3>Le score de difficulté</h3>
-    <p>C’est un indice de 0 à 100 qui mesure à quel point les conditions météo du jour rendent la lutte difficile. Il est <strong>calculé, pas estimé</strong>, avec la même formule pour toutes les journées :</p>
-    <p><strong>Trois composantes</strong>, chacune ramenée sur une échelle de 0 à 100 :<br>
-    — <strong>température maximale</strong>, de 15 °C (0) à 42 °C (100) ;<br>
-    — <strong>humidité minimale</strong>, de 80 % (0) à 15 % (100), donc inversée ;<br>
-    — <strong>rafales maximales</strong>, de 0 (0) à 60 km/h (100).</p>
-    <p><strong>Pondération : 30 % température, 40 % humidité, 30 % vent.</strong> L’humidité pèse le plus lourd parce que c’est elle qui commande la disponibilité du combustible ; la température et le vent comptent à parts égales derrière.</p>
-    <p>Exemple sur mercredi 29 : 42 °C donne 100, 16 % d’humidité donne 98, 45 km/h donne 75. Le score est donc 0,30 × 100 + 0,40 × 98 + 0,30 × 75 = <strong>92</strong>. Toute journée du tableau peut être recalculée de la même façon.</p>
+    <p>C’est un indice de 0 à 100 qui mesure à quel point les conditions rendent la lutte difficile. Il est <strong>calculé, pas estimé</strong>, avec la même méthode pour toutes les journées. Cliquez sur un jour dans le tableau des prévisions pour voir son détail matin / midi / après-midi / soir.</p>
+
+    <p><strong>Le calcul se fait heure par heure, pas sur les extrêmes du jour.</strong> C’est le point important. Prendre séparément la température maximale, l’humidité minimale et la rafale maximale revient à fabriquer une heure qui n’existe pas. Mercredi 29 en est l’exemple : les 42 °C tombent à 17h avec seulement 15 km/h de vent, et les 45 km/h arrivent à 18h quand il ne fait plus que 40 °C. Aucune heure ne réunit les trois. Le score retenu est donc celui de <strong>la pire heure réelle</strong> de la journée.</p>
+
+    <p><strong>Cinq composantes</strong>, chacune ramenée sur 0 à 100, calculées pour chaque heure :<br>
+    — <strong>température</strong> (25 %), de 15 °C à 42 °C ;<br>
+    — <strong>humidité</strong> (30 %), de 80 % à 15 %, inversée : c’est elle qui commande la disponibilité du combustible ;<br>
+    — <strong>rafales</strong> (20 %), de 0 à 60 km/h ;<br>
+    — <strong>vent moyen</strong> (10 %), de 0 à 30 km/h : le vent soutenu pousse le front, là où la rafale projette des brandons ;<br>
+    — <strong>instabilité</strong> (15 %), mesurée par la chute de pression sur six heures, de 0 à 5 hPa. C’est le paramètre qui déclenche le pyrocumulonimbus, et il manquait aux versions précédentes de ce score.</p>
+
+    <p>Deux <strong>coefficients journaliers</strong> s’appliquent ensuite :<br>
+    — <strong>sécheresse cumulée</strong> : ×0,90 au lendemain d’une pluie, ×1,00 à deux ou trois jours, ×1,08 à moins d’une semaine, ×1,15 au-delà. Sans lui, une journée chaude après un orage et la même après trois semaines de sec donneraient le même score, ce qui n’a pas de sens pour du combustible forestier. La dernière pluie mesurable remonte au dimanche 26 juillet.<br>
+    — <strong>récupération nocturne</strong> : ×1,05 quand l’humidité ne remonte pas au-dessus de 60 % pendant la nuit. Un feu qui ne se couche pas repart plus vite le lendemain.</p>
+
+    <p>Exemple sur mercredi 29, à 18h, l’heure la plus difficile : température 93, humidité 92, rafales 75, vent moyen 67, instabilité 60. Le score brut est 0,25 × 93 + 0,30 × 92 + 0,20 × 75 + 0,10 × 67 + 0,15 × 60 = 82. La sécheresse est à ×1,00 (trois jours depuis la pluie) et la nuit à ×1,00, donc le score final est <strong>82</strong>.</p>
 
     <h3>Comment le risque est calculé</h3>
     <p>Le feu ne grandit pas régulièrement. Il stagne pendant des heures, puis saute d’environ 10 000 hectares en une soirée quand un pyrocumulonimbus se forme au-dessus du front. Cette dynamique en marches d’escalier est visible sur les deux orages de feu du 24 et du 25 juillet.</p>
