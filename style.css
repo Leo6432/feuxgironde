@@ -115,6 +115,7 @@ h3{font-size:21px;font-weight:600;margin-bottom:8px}
 .mark-k{font-size:13.5px;color:var(--muted);margin-bottom:6px}
 .mark-v{font-family:'Archivo',sans-serif;font-weight:700;font-size:23px;letter-spacing:-.02em}
 .mark-v.red{color:var(--red)}
+.mark-s{font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.45}
 
 /* ── fil des évolutions ────────────────────────────────── */
 .timeline{max-width:74ch;margin:0;padding:0;list-style:none}

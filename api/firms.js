@@ -163,9 +163,9 @@ module.exports = async (req, res) => {
   // Cache serveur : le cache CDN ne couvre qu'une région et repart de zéro à
   // chaque déploiement. Une fenêtre longue coûte cher côté FIRMS (deux
   // capteurs, plusieurs milliers de lignes), donc on la garde en Redis.
-  // v3 : les entrées v2 pouvaient contenir une réponse dégradée à 24 h mise
-  // en cache sous la clé de la fenêtre longue — on repart sur une clé neuve.
-  const cleCache = 'firms:v3:' + jours;
+  // v4 : grille plus fine et cellules encodées en tableaux compacts — les
+  // entrées des versions précédentes n'ont plus la bonne forme.
+  const cleCache = 'firms:v4:' + jours;
   let redis = null;
   try {
     const p = getClient();
@@ -250,37 +250,43 @@ module.exports = async (req, res) => {
 
   const frpTotal = enrichis.reduce((s, p) => s + p.frp, 0);
 
-  // Agrégation en cellules de la taille d'un pixel VIIRS (~375 m). Envoyer
-  // les détections brutes plafonnées coupait l'historique : triées du plus
-  // récent au plus ancien, seules les dernières heures passaient le plafond,
-  // et la carte ne montrait plus que la journée en cours. Une cellule porte
-  // sa première et sa dernière détection : c'est tout ce qu'il faut pour
-  // rejouer l'incendie, pour une fraction du poids.
-  const GRILLE = 0.004;
+  // Agrégation en cellules. Envoyer les détections brutes plafonnées coupait
+  // l'historique : triées du plus récent au plus ancien, seules les dernières
+  // heures passaient le plafond. Une cellule porte sa première et sa dernière
+  // détection : c'est tout ce qu'il faut pour rejouer l'incendie.
+  //
+  // La grille (~275 m) est plus fine que l'empreinte VIIRS (~375 m) : d'un
+  // passage à l'autre, les centres des détections se décalent, et cette
+  // dispersion dessine des contours plus fins que le pixel du capteur.
+  const GRILLE = 0.0025;
   const parCellule = {};
   enrichis.forEach((p) => {
     const la = Math.round(p.lat / GRILLE) * GRILLE;
     const lo = Math.round(p.lon / GRILLE) * GRILLE;
-    const k = la.toFixed(3) + '_' + lo.toFixed(3);
+    const k = la.toFixed(4) + '_' + lo.toFixed(4);
     const t = tsUtc(p.date, p.heure);
     let c = parCellule[k];
     if (!c) {
-      c = parCellule[k] = {
-        lat: +la.toFixed(3),
-        lon: +lo.toFixed(3),
-        t0: t,
-        t1: t,
-        frp: 0,
-        n: 0,
-        distanceKm: Math.round(distanceKm(LAT, LON, la, lo)),
-      };
+      c = parCellule[k] = { lat: +la.toFixed(4), lon: +lo.toFixed(4), t0: t, t1: t, frp: 0 };
     }
     if (t < c.t0) c.t0 = t;
     if (t > c.t1) c.t1 = t;
     if (p.frp > c.frp) c.frp = Math.round(p.frp);
-    c.n += 1;
   });
-  const cellules = Object.values(parCellule).sort((a, b) => a.t0 - b.t0).slice(0, 15000);
+  // Encodage compact [lat, lon, t0, t1, frp, km], temps en minutes depuis le
+  // départ du feu : moitié moins lourd que des objets nommés, ce qui compte
+  // avec plusieurs milliers de cellules à ce pas de grille.
+  const ORIGINE = new Date(DEPART_FEU + 'T00:00:00Z').getTime();
+  const cellules = Object.values(parCellule)
+    .sort((a, b) => a.t0 - b.t0)
+    .slice(0, 15000)
+    .map((c) => [
+      c.lat, c.lon,
+      Math.round((c.t0 - ORIGINE) / 60000),
+      Math.round((c.t1 - ORIGINE) / 60000),
+      c.frp,
+      Math.round(distanceKm(LAT, LON, c.lat, c.lon)),
+    ]);
 
   const sortie = {
     ok: true,
@@ -300,6 +306,7 @@ module.exports = async (req, res) => {
     derniereDetection: enrichis[0] ? `${enrichis[0].date} ${enrichis[0].heure}` : null,
     parJour: joursListe,
     grille: GRILLE,
+    origine: ORIGINE,
     cellules,
   };
 
