@@ -10,6 +10,8 @@
 // https://firms.modaps.eosdis.nasa.gov/api/ — stockée dans la variable
 // d'environnement Vercel FIRMS_MAP_KEY, jamais dans le code.
 
+const { getClient } = require('../lib/redis');
+
 const LAT = 44.98;   // Saumos, Gironde
 const LON = -1.02;
 
@@ -22,6 +24,17 @@ const BBOX = '-1.35,44.80,-0.85,45.20';
 // FIRMS plafonne la profondeur d'historique à 10 jours en temps quasi réel.
 const JOURS_DEFAUT = 1;
 const JOURS_MAX = 10;
+
+// Départ du feu. `jours=max` remonte jusque-là, dans la limite des 10 jours
+// que FIRMS accepte en temps quasi réel : au-delà, il faudrait basculer sur
+// leur API d'archive, qui utilise d'autres identifiants de capteurs.
+const DEPART_FEU = '2026-07-22';
+
+function joursDepuisDepart() {
+  const debut = new Date(DEPART_FEU + 'T00:00:00Z');
+  const ecoules = Math.ceil((Date.now() - debut.getTime()) / 86400000) + 1;
+  return Math.min(JOURS_MAX, Math.max(1, ecoules));
+}
 
 // Deux satellites VIIRS : leurs passages ne sont pas synchronisés, les
 // combiner réduit les trous de couverture.
@@ -100,8 +113,30 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const demande = parseInt((req.query && req.query.jours) || '', 10);
-  const jours = Math.min(JOURS_MAX, Math.max(1, demande || JOURS_DEFAUT));
+  const brut = (req.query && req.query.jours) || '';
+  const jours = brut === 'max'
+    ? joursDepuisDepart()
+    : Math.min(JOURS_MAX, Math.max(1, parseInt(brut, 10) || JOURS_DEFAUT));
+
+  // Cache serveur : le cache CDN ne couvre qu'une région et repart de zéro à
+  // chaque déploiement. Une fenêtre longue coûte cher côté FIRMS (deux
+  // capteurs, plusieurs milliers de lignes), donc on la garde en Redis.
+  const cleCache = 'firms:v1:' + jours;
+  let redis = null;
+  try {
+    const p = getClient();
+    redis = p ? await p : null;
+    if (redis) {
+      const garde = await redis.get(cleCache);
+      if (garde) {
+        res.setHeader('X-Cache', 'redis');
+        res.status(200).json(JSON.parse(garde));
+        return;
+      }
+    }
+  } catch (e) {
+    redis = null;   // le cache est un confort, jamais une dépendance
+  }
 
   async function essayer(n) {
     const resultats = await Promise.allSettled(CAPTEURS.map((c) => recuperer(c, cle, n)));
@@ -159,11 +194,12 @@ module.exports = async (req, res) => {
 
   const frpTotal = enrichis.reduce((s, p) => s + p.frp, 0);
 
-  res.status(200).json({
+  const sortie = {
     ok: true,
     source: 'NASA FIRMS · VIIRS (SNPP + NOAA-20)',
     fenetre: joursObtenus === 1 ? 'dernières 24h' : `derniers ${joursObtenus} jours`,
     jours: joursObtenus,
+    depuis: DEPART_FEU,
     // Signalé quand la fenêtre demandée n'a pas pu être servie en entier.
     replique: joursObtenus !== jours ? `fenêtre réduite de ${jours} à ${joursObtenus} jour(s)` : undefined,
     total: enrichis.length,
@@ -173,6 +209,15 @@ module.exports = async (req, res) => {
     frpTotal: Math.round(frpTotal),
     derniereDetection: enrichis[0] ? `${enrichis[0].date} ${enrichis[0].heure}` : null,
     parJour: joursListe,
-    points: enrichis.slice(0, 600),
-  });
+    points: enrichis.slice(0, 3000),
+  };
+
+  // 20 min : en dessous du rythme des passages satellite, donc on ne perd
+  // aucune détection en la servant depuis le cache.
+  if (redis) {
+    try { await redis.set(cleCache, JSON.stringify(sortie), { EX: 1200 }); } catch (e) { /* tant pis */ }
+  }
+
+  res.setHeader('X-Cache', redis ? 'miss' : 'none');
+  res.status(200).json(sortie);
 };

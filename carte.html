@@ -51,8 +51,8 @@
 
 <div class="container page-head">
   <span class="kicker">Données NASA FIRMS · satellites VIIRS</span>
-  <h1>Foyers actifs en direct</h1>
-  <p class="measure">Chaque point est une <strong>détection thermique</strong> : un endroit où un satellite a mesuré une chaleur anormale en survolant la zone. Un satellite ne passe que quelques fois par jour — <strong>l’absence de point ne veut pas dire l’absence de feu</strong>. Ce n’est ni le périmètre de l’incendie, ni une carte officielle des secours.</p>
+  <h1>Le feu heure par heure</h1>
+  <p class="measure">En <strong style="color:#CE1B26">couleur</strong>, les foyers encore chauds à l’heure choisie ; en <strong style="color:#6B6B78">gris</strong>, tout ce que le feu a déjà parcouru avant elle. Déplacez le curseur pour rejouer l’incendie depuis son départ. Un satellite ne passe que quelques fois par jour — <strong>l’absence de point ne veut pas dire l’absence de feu</strong>. Ce n’est ni le périmètre officiel de l’incendie, ni une carte des secours.</p>
 </div>
 
 <section class="section" style="padding-top:0">
@@ -64,7 +64,7 @@
 
     <div class="time-bar" id="fg-time" hidden>
       <div class="time-head">
-        <label for="fg-time-range">Remonter dans le temps — un cran par passage satellite</label>
+        <label for="fg-time-range">Remonter dans le temps — un cran par heure</label>
         <output id="fg-time-label" for="fg-time-range"></output>
       </div>
       <input type="range" id="fg-time-range" min="0" max="0" step="1" value="0">
@@ -72,9 +72,10 @@
     </div>
 
     <div class="map-legend">
-      <span><i style="background:#CE1B26"></i> Forte puissance (≥ 30 MW)</span>
+      <span><i style="background:#CE1B26"></i> Foyer actif, forte puissance (≥ 30 MW)</span>
       <span><i style="background:#E8761B"></i> Moyenne (10–30 MW)</span>
       <span><i style="background:#EBA92B"></i> Faible (&lt; 10 MW)</span>
+      <span><i style="background:#6B6B78"></i> Déjà parcouru</span>
     </div>
 
     <div class="marks" style="margin-top:28px">

@@ -11,7 +11,10 @@
 
   var note = document.getElementById('fg-carte-note');
   var SAUMOS = [44.98, -1.02];
-  var JOURS = 7;
+
+  // Une détection reste comptée « active » pendant ce laps de temps après
+  // son relevé. Au-delà, elle bascule dans la zone déjà parcourue.
+  var FENETRE_ACTIVE_H = 6;
 
   function echec(message) {
     if (note) note.textContent = message;
@@ -29,34 +32,23 @@
     return Math.max(6, Math.min(20, 6 + Math.sqrt(frp || 0) * 2));
   }
 
-  function jourFr(iso) {
-    var d = new Date(iso + 'T12:00:00');
-    if (isNaN(d)) return iso;
-    return d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+  // Les heures FIRMS sont en UTC : on garde cette référence de bout en bout
+  // plutôt que de convertir, pour que l'étiquette du curseur corresponde
+  // exactement à l'horodatage affiché dans les info-bulles.
+  function horodatage(p) {
+    var hm = (p.heure || '00h00').split('h');
+    return Date.UTC(
+      +p.date.slice(0, 4), +p.date.slice(5, 7) - 1, +p.date.slice(8, 10),
+      +hm[0] || 0, +hm[1] || 0
+    );
   }
 
-  // Un satellite ne survole la zone que quelques fois par jour. Découper le
-  // temps en survols plutôt qu'en journées donne des crans qui correspondent
-  // à de vraies mesures, au lieu de crans vides entre deux passages.
-  function passages(points) {
-    var par = {};
-    points.forEach(function (p) {
-      var heure = (p.heure || '').split('h')[0];
-      var cle = p.date + ' ' + heure;
-      if (!par[cle]) {
-        par[cle] = { cle: cle, date: p.date, heure: heure, points: [], frpTotal: 0, frpMax: 0 };
-      }
-      var g = par[cle];
-      g.points.push(p);
-      g.frpTotal += p.frp || 0;
-      g.frpMax = Math.max(g.frpMax, p.frp || 0);
+  function heureFr(ms) {
+    var d = new Date(ms);
+    var jour = d.toLocaleDateString('fr-FR', {
+      weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC',
     });
-    return Object.keys(par).sort().map(function (k) {
-      var g = par[k];
-      g.frpTotal = Math.round(g.frpTotal);
-      g.frpMax = Math.round(g.frpMax);
-      return g;
-    });
+    return jour + ' · ' + String(d.getUTCHours()).padStart(2, '0') + 'h';
   }
 
   function attendreLeaflet(essais, suite) {
@@ -66,7 +58,10 @@
   }
 
   attendreLeaflet(40, function () {
-    var carte = L.map(conteneur, { scrollWheelZoom: false }).setView(SAUMOS, 11);
+    // Rendu canvas : plusieurs milliers de cercles redessinés à chaque cran du
+    // curseur seraient injouables en SVG, un élément DOM par point.
+    var carte = L.map(conteneur, { scrollWheelZoom: false, preferCanvas: true })
+      .setView(SAUMOS, 11);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 17,
@@ -76,28 +71,46 @@
     // Repère fixe : sans lui, une carte sans détection n'a aucun point d'ancrage.
     L.marker(SAUMOS).addTo(carte).bindPopup('<strong>Saumos</strong><br>Départ du feu, 22 juillet');
 
-    // Les foyers vivent dans leur propre calque : changer de jour se résume
-    // à le vider et le re-remplir, sans toucher au fond de carte.
-    var calque = L.layerGroup().addTo(carte);
+    // Deux calques distincts : la trace cumulée du feu (tout ce qui a brûlé
+    // depuis le départ) en dessous, et les foyers encore chauds au moment
+    // choisi par-dessus. Le second est toujours dessiné en dernier.
+    var calqueBrule = L.layerGroup().addTo(carte);
+    var calqueActif = L.layerGroup().addTo(carte);
 
-    function dessiner(points, recadrer) {
-      calque.clearLayers();
+    function bulle(p) {
+      return '<strong>' + (p.frp ? Math.round(p.frp) + ' MW' : 'puissance inconnue') + '</strong><br>' +
+        p.date + ' à ' + p.heure + ' UTC<br>' +
+        'à ' + p.distanceKm + ' km de Saumos';
+    }
+
+    function dessiner(brules, actifs, recadrer) {
+      calqueBrule.clearLayers();
+      calqueActif.clearLayers();
       var coords = [];
-      points.forEach(function (p) {
+
+      // Zone parcourue : gris sombre, petit et discret. C'est un fond, pas
+      // une alerte — ces foyers-là sont éteints.
+      brules.forEach(function (p) {
+        if (!isFinite(p.lat) || !isFinite(p.lon)) return;
+        L.circleMarker([p.lat, p.lon], {
+          radius: 5, color: '#4A4A55', fillColor: '#6B6B78',
+          fillOpacity: 0.35, weight: 0,
+        }).bindPopup(bulle(p) + '<br><em>déjà parcouru</em>').addTo(calqueBrule);
+        coords.push([p.lat, p.lon]);
+      });
+
+      actifs.forEach(function (p) {
         if (!isFinite(p.lat) || !isFinite(p.lon)) return;
         L.circleMarker([p.lat, p.lon], {
           radius: rayon(p.frp),
           color: couleur(p.frp),
           fillColor: couleur(p.frp),
-          fillOpacity: 0.45,
+          fillOpacity: 0.5,
           weight: 2,
-        }).bindPopup(
-          '<strong>' + (p.frp ? Math.round(p.frp) + ' MW' : 'puissance inconnue') + '</strong><br>' +
-          p.date + ' à ' + p.heure + ' UTC<br>' +
-          'à ' + p.distanceKm + ' km de Saumos'
-        ).addTo(calque);
+        }).bindPopup(bulle(p)).addTo(calqueActif);
         coords.push([p.lat, p.lon]);
       });
+
       if (recadrer && coords.length) {
         coords.push(SAUMOS);
         carte.fitBounds(L.latLngBounds(coords).pad(0.2));
@@ -113,13 +126,19 @@
       if (d) d.textContent = derniere || '—';
     }
 
-    fetch('/api/firms?jours=' + JOURS)
+    fetch('/api/firms?jours=max')
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d || !d.ok) {
           echec('Détections satellite indisponibles pour le moment.');
           return;
         }
+
+        var pts = (d.points || []).filter(function (p) {
+          return isFinite(p.lat) && isFinite(p.lon);
+        });
+        pts.forEach(function (p) { p.t = horodatage(p); });
+        pts.sort(function (a, b) { return a.t - b.t; });
 
         if (note) {
           note.classList.remove('stale');
@@ -129,47 +148,68 @@
         }
 
         chiffres(d.total, d.frpMax, d.derniereDetection);
-        dessiner(d.points || [], true);
+        dessiner([], pts, true);
 
-        var survols = passages(d.points || []);
         var curseur = document.getElementById('fg-time-range');
         var bloc = document.getElementById('fg-time');
-        // Un seul survol ne mérite pas un curseur.
-        if (!curseur || !bloc || survols.length < 2) return;
+        if (!curseur || !bloc || pts.length < 2) return;
 
-        // Le dernier cran affiche la période entière plutôt qu'un survol :
-        // c'est l'état par défaut de la carte, et ça évite d'avoir à revenir
-        // en arrière pour retrouver la vue d'ensemble.
-        var crans = survols.length;
+        // Un cran par heure, du premier relevé au dernier. Les heures sans
+        // survol ne sont pas vides pour autant : la trace cumulée y reste
+        // visible, seuls les foyers actifs disparaissent.
+        var HEURE = 3600000;
+        var debut = Math.floor(pts[0].t / HEURE) * HEURE;
+        var fin = Math.ceil(pts[pts.length - 1].t / HEURE) * HEURE;
+        var crans = Math.max(1, Math.round((fin - debut) / HEURE));
+
         curseur.max = String(crans);
         curseur.value = String(crans);
         bloc.removeAttribute('hidden');
 
         var minLab = document.getElementById('fg-time-min');
         var maxLab = document.getElementById('fg-time-max');
-        if (minLab) minLab.textContent = jourFr(survols[0].date) + ' · ' + survols[0].heure + 'h';
-        if (maxLab) maxLab.textContent = 'Tout';
+        if (minLab) minLab.textContent = heureFr(debut);
+        if (maxLab) maxLab.textContent = heureFr(fin);
 
         var etiquette = document.getElementById('fg-time-label');
 
         function afficher() {
-          var i = parseInt(curseur.value, 10);
-          if (i >= crans) {
-            if (etiquette) etiquette.textContent = 'Période entière — ' + d.total + ' détections';
-            dessiner(d.points || [], false);
-            chiffres(d.total, d.frpMax, d.derniereDetection);
-            return;
+          var instant = debut + parseInt(curseur.value, 10) * HEURE;
+          var limite = instant - FENETRE_ACTIVE_H * HEURE;
+
+          var brules = [];
+          var actifs = [];
+          for (var i = 0; i < pts.length; i++) {
+            if (pts[i].t > instant) break;          // pts est trié
+            (pts[i].t >= limite ? actifs : brules).push(pts[i]);
           }
-          var s = survols[i];
+
+          var frpActif = actifs.reduce(function (s, p) { return s + (p.frp || 0); }, 0);
           if (etiquette) {
-            etiquette.textContent = jourFr(s.date) + ' · ' + s.heure + 'h — ' + s.points.length +
-              ' détection' + (s.points.length > 1 ? 's' : '') + ', ' + s.frpTotal + ' MW';
+            etiquette.textContent = heureFr(instant) + ' — ' +
+              (actifs.length ? actifs.length + ' foyer' + (actifs.length > 1 ? 's' : '') + ' actif' +
+                (actifs.length > 1 ? 's' : '') + ', ' + Math.round(frpActif) + ' MW'
+                : 'aucun foyer actif') +
+              ' · ' + (brules.length + actifs.length) + ' détections cumulées';
           }
-          dessiner(s.points, false);
-          chiffres(s.points.length, s.frpMax, s.date + ' ' + s.heure + 'h');
+
+          dessiner(brules, actifs, false);
+          chiffres(
+            actifs.length,
+            actifs.length ? Math.max.apply(null, actifs.map(function (p) { return p.frp || 0; })) : 0,
+            actifs.length ? heureFr(actifs[actifs.length - 1].t) : '—'
+          );
         }
 
-        curseur.addEventListener('input', afficher);
+        // Le glissement déclenche un événement par pixel parcouru : sans ce
+        // filtrage, on redessinerait la carte bien plus souvent que l'écran
+        // ne se rafraîchit.
+        var enAttente = false;
+        curseur.addEventListener('input', function () {
+          if (enAttente) return;
+          enAttente = true;
+          requestAnimationFrame(function () { enAttente = false; afficher(); });
+        });
         afficher();
       })
       .catch(function () {
