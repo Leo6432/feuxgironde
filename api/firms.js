@@ -15,11 +15,14 @@ const { getClient } = require('../lib/redis');
 const LAT = 44.98;   // Saumos, Gironde
 const LON = -1.02;
 
-// Resserrée sur le seul corridor Saumos–Lacanau : à la taille précédente,
-// la boîte englobait Bordeaux et le bassin d'Arcachon, deux zones sans
-// rapport avec ce feu où d'autres sources de chaleur (urbaines, agricoles,
-// un autre feu de forêt) auraient pu se glisser dans les détections.
-const BBOX = '-1.35,44.80,-0.85,45.20';
+// Boîte large pour la requête FIRMS, affinée ensuite par un rayon de 28 km
+// autour de Saumos. L'ancien rectangle serré (bord sud à 44,80°, soit 20 km)
+// excluait bien Bordeaux et le bassin d'Arcachon… mais coupait aussi le bas
+// du feu. Le cercle laisse le feu s'étendre à 28 km dans toutes les
+// directions, tandis que Mérignac (30 km), Bordeaux (38 km) et Arcachon
+// (39 km) restent en dehors.
+const BBOX = '-1.45,44.60,-0.55,45.35';
+const RAYON_KM = 28;
 
 // FIRMS plafonne la profondeur d'historique à 10 jours en temps quasi réel.
 const JOURS_DEFAUT = 1;
@@ -164,9 +167,9 @@ module.exports = async (req, res) => {
   // Cache serveur : le cache CDN ne couvre qu'une région et repart de zéro à
   // chaque déploiement. Une fenêtre longue coûte cher côté FIRMS (deux
   // capteurs, plusieurs milliers de lignes), donc on la garde en Redis.
-  // v5 : ajout du satellite NOAA-21 — les entrées précédentes n'ont que
-  // deux capteurs et afficheraient une « dernière détection » plus vieille.
-  const cleCache = 'firms:v5:' + jours;
+  // v6 : filtrage passé du rectangle serré au cercle de 35 km — les entrées
+  // précédentes ont le bas du feu coupé.
+  const cleCache = 'firms:v6:' + jours;
   let redis = null;
   try {
     const p = getClient();
@@ -229,7 +232,10 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const points = tentative.points;
+  // Le vrai filtre géographique : tout ce qui est à plus de 28 km de Saumos
+  // (autres feux, chaleur urbaine, brûlages agricoles) sort des données.
+  const points = tentative.points
+    .filter((p) => distanceKm(LAT, LON, p.lat, p.lon) <= RAYON_KM);
 
   const enrichis = points
     .map((p) => ({ ...p, distanceKm: Math.round(distanceKm(LAT, LON, p.lat, p.lon)) }))
