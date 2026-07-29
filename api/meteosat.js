@@ -28,9 +28,29 @@ function sansSecret(message, valeurs) {
   return m.slice(0, 200);
 }
 
+// Sans limite, un appel qui ne répond jamais bloquerait la fonction jusqu'à
+// ce que Vercel la tue elle-même — la page resterait sur « connexion en
+// cours » sans jamais afficher d'erreur exploitable. Mieux vaut renoncer
+// proprement avant. Deux appels se suivent (jeton puis recherche) : 4 s
+// chacun laisse de la marge sous la limite d'exécution d'une fonction
+// serverless (10 s sur le plan gratuit Vercel).
+const DELAI_MS = 4000;
+
+async function requeteAvecDelai(url, options) {
+  const stop = new AbortController();
+  const minuteur = setTimeout(() => stop.abort(), DELAI_MS);
+  try {
+    return await fetch(url, { ...options, signal: stop.signal });
+  } catch (e) {
+    throw new Error(e.name === 'AbortError' ? `délai dépassé (${DELAI_MS / 1000}s)` : e.message);
+  } finally {
+    clearTimeout(minuteur);
+  }
+}
+
 async function obtenirJeton(cle, secret) {
   const identifiants = Buffer.from(`${cle}:${secret}`).toString('base64');
-  const r = await fetch(TOKEN_URL, {
+  const r = await requeteAvecDelai(TOKEN_URL, {
     method: 'POST',
     headers: {
       Authorization: `Basic ${identifiants}`,
@@ -57,7 +77,7 @@ async function dernierProduit(jeton) {
   u.searchParams.set('c', '5');
   u.searchParams.set('sort', 'desc,start,time');
 
-  const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${jeton}` } });
+  const r = await requeteAvecDelai(u.toString(), { headers: { Authorization: `Bearer ${jeton}` } });
   const texte = await r.text();
   if (!r.ok) throw new Error(`recherche produits échouée (HTTP ${r.status}): ${sansSecret(texte, [jeton])}`);
   let json;
