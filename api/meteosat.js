@@ -108,26 +108,48 @@ async function chercherCollectionsFeu(jeton) {
   return null;
 }
 
-async function dernierProduit(jeton) {
-  // Recherche les produits les plus récents de la collection, triés du plus
-  // récent au plus ancien — on ne demande que les métadonnées (pas le
-  // fichier lui-même) pour cette première étape.
-  // « sort » retiré : c'était un format inventé sans certitude, et il a
-  // fait échouer la requête (InvalidParameterValue). On se limite aux
-  // paramètres dont le nom est bien documenté (pi, si, c, format) et on
-  // laisse l'API renvoyer son tri par défaut pour cette première étape.
+// Même boîte que FIRMS (api/firms.js), pour rester cohérent : le corridor
+// Saumos–Lacanau, en dehors de Bordeaux et du bassin d'Arcachon.
+const BBOX_SAUMOS = '-1.45,44.60,-0.55,45.35';
+
+async function produitsSaumos(jeton, jours) {
+  // Étape 2 : restreindre aux produits qui couvrent vraiment Saumos, sur les
+  // derniers jours — noms de paramètres confirmés par les facettes réelles
+  // de l'API (dtstart/dtend), sauf « bbox » qui reste une supposition (base
+  // OpenSearch Geo standard, mais jamais vérifiée sur cette API précise).
+  const maintenant = new Date();
+  const debut = new Date(maintenant.getTime() - jours * 86400000);
+
   const u = new URL(RECHERCHE_URL);
   u.searchParams.set('format', 'json');
   u.searchParams.set('pi', COLLECTION_FRP);
   u.searchParams.set('si', '0');
-  u.searchParams.set('c', '5');
+  u.searchParams.set('c', '10');
+  u.searchParams.set('bbox', BBOX_SAUMOS);
+  u.searchParams.set('dtstart', debut.toISOString());
+  u.searchParams.set('dtend', maintenant.toISOString());
 
   const r = await requeteAvecDelai(u.toString(), { headers: { Authorization: `Bearer ${jeton}` } });
   const texte = await r.text();
   if (!r.ok) throw new Error(`recherche produits échouée (HTTP ${r.status}): ${sansSecret(texte, [jeton])}`);
   let json;
   try { json = JSON.parse(texte); } catch (e) { throw new Error('recherche : réponse illisible'); }
-  return json;
+
+  // Réponse allégée : la brute est bien trop volumineuse à relire (facettes,
+  // schémas). On ne garde que ce qui sert à la suite — identifiant, période
+  // couverte, et les liens de téléchargement du fichier.
+  const items = Array.isArray(json.features) ? json.features : [];
+  return {
+    totalResults: json.totalResults,
+    itemsPerPage: json.itemsPerPage,
+    reçus: items.length,
+    produits: items.slice(0, 10).map((f) => ({
+      id: f.id || (f.properties && f.properties.identifier),
+      debut: f.properties && (f.properties.start || f.properties.date),
+      fin: f.properties && (f.properties.end),
+      liens: (f.properties && f.properties.links && f.properties.links.data) || f.links || null,
+    })),
+  };
 }
 
 module.exports = async (req, res) => {
@@ -168,15 +190,15 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const resultat = await dernierProduit(jeton);
+    const resultat = await produitsSaumos(jeton, 3);
     res.status(200).json({
       ok: true,
       etape: 'connecte',
       collection: COLLECTION_FRP,
-      // Renvoyé tel quel pour l'instant : cette étape sert à voir la forme
-      // réelle de la réponse EUMETSAT (dates, identifiants de fichiers)
-      // avant d'écrire l'extraction des pixels sur Saumos.
-      brut: resultat,
+      // Allégé (voir produitsSaumos) : identifiants, période couverte,
+      // liens de téléchargement — sert à préparer l'extraction des pixels,
+      // pas encore écrite.
+      resultat,
     });
   } catch (e) {
     const messagePropre = sansSecret(e.message, [cle, secret, jeton]);
