@@ -88,7 +88,18 @@ async function chercherCollectionsFeu(jeton) {
       // que soit la clé qui la porte.
       const liste = Array.isArray(json) ? json
         : (json.collections || json.features || json.items || []);
-      if (!Array.isArray(liste)) continue;
+      if (!Array.isArray(liste) || !liste.length) {
+        // Aucune des clés devinées ne correspond (ou la liste est vraiment
+        // vide) : on renvoie les clés réelles de la réponse pour ne plus
+        // deviner à l'aveugle la prochaine fois.
+        return {
+          url,
+          total: Array.isArray(liste) ? liste.length : 0,
+          trouvees: [],
+          formeInconnue: Array.isArray(json) ? null : Object.keys(json),
+          extrait: texte.slice(0, 500),
+        };
+      }
       const correspond = /fire|frp|radiative|incend/i;
       const trouvees = liste.filter((c) => correspond.test(JSON.stringify(c)));
       return { url, total: liste.length, trouvees: trouvees.slice(0, 10) };
@@ -170,7 +181,10 @@ module.exports = async (req, res) => {
     // seule plutôt que de simplement remonter l'échec.
     let suggestions = null;
     if (/collection/i.test(messagePropre)) {
-      try { suggestions = await chercherCollectionsFeu(jeton); } catch (e2) { /* tant pis */ }
+      try {
+        suggestions = await chercherCollectionsFeu(jeton);
+        if (suggestions && suggestions.extrait) suggestions.extrait = sansSecret(suggestions.extrait, [cle, secret, jeton]);
+      } catch (e2) { /* tant pis */ }
     }
     res.status(200).json({
       ok: false,
