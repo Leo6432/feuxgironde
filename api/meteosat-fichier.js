@@ -5,21 +5,26 @@
 // noms des variables NetCDF (latitude/longitude/FRP), inconnus avec
 // certitude sans avoir jamais ouvert un de ces fichiers.
 //
-// Le vrai risque de cette étape : la taille du fichier. Une fonction
-// serverless Vercel (plan gratuit) a 10 s et une mémoire limitée — un
-// produit satellite peut peser des dizaines de Mo. D'où une vérification de
-// taille avant de télécharger en entier, et un abandon propre si c'est trop
-// gros, plutôt qu'un blocage ou un plantage silencieux.
+// Le vrai risque de cette étape : la taille du fichier ET le temps total.
+// Une fonction serverless Vercel (plan gratuit) a une limite d'environ 10s
+// pour TOUTE la requête (authentification + téléchargement + ouverture du
+// zip + lecture NetCDF cumulés) — pas 10s par étape. La première version de
+// ce fichier allouait jusqu'à 4s + 8s rien que pour l'authentification et le
+// téléchargement, donc jusqu'à 12s à elle seule : Vercel tuait la fonction
+// avant la fin et renvoyait sa propre page d'erreur générique (pas du JSON),
+// ce qui cassait la page ("Unexpected token 'A', "A server e"... n'est pas
+// du JSON valide"). Corrigé en suivant un budget de temps global unique,
+// partagé entre toutes les étapes, avec un abandon propre (message JSON
+// clair) dès qu'il ne reste plus assez de temps pour continuer — plutôt que
+// de laisser Vercel couper la fonction en pleine réponse.
+const BUDGET_TOTAL_MS = 8000;
+
+const TAILLE_MAX_OCTETS = 20 * 1024 * 1024;
 
 const JSZip = require('jszip');
 const { NetCDFReader } = require('netcdfjs');
 
 const TOKEN_URL = 'https://api.eumetsat.int/token';
-const DELAI_AUTH_MS = 4000;
-const DELAI_TELECHARGEMENT_MS = 8000;
-// Au-delà, on renonce plutôt que de risquer d'épuiser le temps ou la
-// mémoire de la fonction sans le savoir à l'avance.
-const TAILLE_MAX_OCTETS = 20 * 1024 * 1024;
 
 function sansSecret(message, valeurs) {
   let m = String(message || 'erreur inconnue');
@@ -39,13 +44,24 @@ async function requeteAvecDelai(url, options, delaiMs) {
   }
 }
 
-async function obtenirJeton(cle, secret) {
+// Pour les étapes qui ne sont pas de simples appels réseau (ouverture du zip,
+// lecture NetCDF) : pas d'AbortController possible, mais on peut au moins
+// abandonner l'attente et répondre proprement si ça prend trop longtemps,
+// plutôt que de risquer que Vercel coupe tout sans réponse JSON.
+function courseContreLeTemps(promesse, delaiMs, nomEtape) {
+  return Promise.race([
+    promesse,
+    new Promise((_, rejeter) => setTimeout(() => rejeter(new Error(`${nomEtape} : délai dépassé (${Math.round(delaiMs / 1000)}s), plus de temps disponible`)), delaiMs)),
+  ]);
+}
+
+async function obtenirJeton(cle, secret, delaiMs) {
   const identifiants = Buffer.from(`${cle}:${secret}`).toString('base64');
   const r = await requeteAvecDelai(TOKEN_URL, {
     method: 'POST',
     headers: { Authorization: `Basic ${identifiants}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: 'grant_type=client_credentials',
-  }, DELAI_AUTH_MS);
+  }, delaiMs);
   const texte = await r.text();
   if (!r.ok) throw new Error(`jeton refusé (HTTP ${r.status}): ${sansSecret(texte, [cle, secret])}`);
   const json = JSON.parse(texte);
@@ -55,6 +71,12 @@ async function obtenirJeton(cle, secret) {
 
 module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
+
+  const debut = Date.now();
+  const tempsRestant = () => BUDGET_TOTAL_MS - (Date.now() - debut);
+  // Marge de sécurité gardée de côté à chaque étape pour laisser le temps de
+  // sérialiser et envoyer la réponse JSON elle-même.
+  const MARGE_MS = 300;
 
   const jetonDirect = process.env.EUMETSAT_ACCESS_TOKEN;
   const cle = process.env.EUMETSAT_CONSUMER_KEY;
@@ -75,17 +97,26 @@ module.exports = async (req, res) => {
       res.status(200).json({ ok: false, etape: 'configuration', raison: 'aucun accès EUMETSAT configuré' });
       return;
     }
+    if (tempsRestant() < MARGE_MS) {
+      res.status(200).json({ ok: false, etape: 'budget_temps', raison: 'plus de temps disponible avant même de commencer' });
+      return;
+    }
     try {
-      jeton = await obtenirJeton(cle, secret);
+      jeton = await obtenirJeton(cle, secret, tempsRestant() - MARGE_MS);
     } catch (e) {
       res.status(200).json({ ok: false, etape: 'authentification', raison: sansSecret(e.message, [cle, secret]) });
       return;
     }
   }
 
+  if (tempsRestant() < MARGE_MS) {
+    res.status(200).json({ ok: false, etape: 'budget_temps', raison: 'plus assez de temps disponible pour télécharger le fichier après l’authentification' });
+    return;
+  }
+
   let reponse;
   try {
-    reponse = await requeteAvecDelai(url, { headers: { Authorization: `Bearer ${jeton}` } }, DELAI_TELECHARGEMENT_MS);
+    reponse = await requeteAvecDelai(url, { headers: { Authorization: `Bearer ${jeton}` } }, tempsRestant() - MARGE_MS);
   } catch (e) {
     res.status(200).json({ ok: false, etape: 'telechargement', raison: sansSecret(e.message, [cle, secret, jeton]) });
     return;
@@ -128,9 +159,19 @@ module.exports = async (req, res) => {
     return;
   }
 
+  if (tempsRestant() < MARGE_MS) {
+    res.status(200).json({
+      ok: false,
+      etape: 'budget_temps',
+      raison: 'fichier téléchargé, mais plus assez de temps pour l’ouvrir (zip) et le lire',
+      tailleOctets: tampon.length,
+    });
+    return;
+  }
+
   let zip;
   try {
-    zip = await JSZip.loadAsync(tampon);
+    zip = await courseContreLeTemps(JSZip.loadAsync(tampon), tempsRestant() - MARGE_MS, 'ouverture du zip');
   } catch (e) {
     res.status(200).json({
       ok: false,
@@ -160,9 +201,13 @@ module.exports = async (req, res) => {
     fichierAnalyse: candidatFrp || null,
   };
 
-  if (candidatFrp) {
+  if (candidatFrp && tempsRestant() >= MARGE_MS) {
     try {
-      const contenu = await zip.files[candidatFrp].async('nodebuffer');
+      const contenu = await courseContreLeTemps(
+        zip.files[candidatFrp].async('nodebuffer'),
+        tempsRestant() - MARGE_MS,
+        'extraction du fichier NetCDF',
+      );
       const nc = new NetCDFReader(contenu);
       sortie.variables = nc.variables.map((v) => ({
         nom: v.name,
@@ -173,6 +218,8 @@ module.exports = async (req, res) => {
     } catch (e) {
       sortie.erreurLectureNetCDF = e.message;
     }
+  } else if (candidatFrp) {
+    sortie.erreurLectureNetCDF = 'zip ouvert, mais plus assez de temps pour lire le fichier NetCDF';
   }
 
   res.status(200).json(sortie);
