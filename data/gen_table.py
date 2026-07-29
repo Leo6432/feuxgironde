@@ -7,11 +7,11 @@ META = {
                 proj="42 000 ha (estimé, 22h30)", peak=False),
  "Mer 29": dict(num=29, id="mer29", date="2026-07-29", tag="Fenêtre 15h–17h",  tagc="tag-red",  risque=61, lvl="mid",
                 proj="42 000 – 48 000 ha", peak=True),
- "Jeu 30": dict(num=30, id="jeu30", date="2026-07-30", tag="Prévision ARPEGE", tagc="tag-blue", risque=26, lvl="lo",
+ "Jeu 30": dict(num=30, id="jeu30", date="2026-07-30", tag="Prévision ARPEGE 06Z", tagc="tag-blue", risque=26, lvl="lo",
                 proj="Toujours aucune pluie · 42 000 – 51 000 ha", peak=False),
- "Ven 31": dict(num=31, id="ven31", date="2026-07-31", tag="Fenêtre 17h–19h",  tagc="tag-red",  risque=56, lvl="mid",
+ "Ven 31": dict(num=31, id="ven31", date="2026-07-31", tag="Fenêtre 15h–17h",  tagc="tag-red",  risque=56, lvl="mid",
                 proj="42 000 – 57 000 ha", peak=True),
- "Sam 01": dict(num=32, id="sam01", date="2026-08-01", tag="Fenêtre 18h–20h",  tagc="tag-red",  risque=71, lvl="mid",
+ "Sam 01": dict(num=32, id="sam01", date="2026-08-01", tag="Fenêtre 16h–18h",  tagc="tag-red",  risque=66, lvl="mid",
                 proj="42 000 – 64 000 ha", peak=True),
 }
 
