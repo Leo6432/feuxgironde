@@ -76,13 +76,6 @@
 
   function niveau(s) { return s >= 75 ? 'hi' : (s >= 55 ? 'mid' : 'lo'); }
 
-  function poser(el, score) {
-    if (!el) return;
-    el.textContent = score;
-    el.classList.remove('lvl-lo', 'lvl-mid', 'lvl-hi');
-    el.classList.add('lvl-' + niveau(score));
-  }
-
   // Un orage de feu obéit à un effet de seuil, pas à une progression
   // proportionnelle : sous un certain niveau de conditions, il ne se forme
   // tout simplement pas. Les deux journées qui en ont produit un notent
@@ -193,92 +186,44 @@
       });
       majKicker();
 
-      var maj = 0;
-
-      // Une seule saisie manuelle subsiste : la dernière surface confirmée
-      // par la préfecture, lue sur le tableau. Tout le reste en découle.
+      // Le score de difficulté (T°/humidité/rafales) est désormais saisi à
+      // la main à partir des relevés Météociel : l'API Open-Meteo utilisée
+      // ici a déjà affiché des valeurs qui ne correspondaient pas au run
+      // réel. Seul le risque d'orage de feu reste automatique — il pondère
+      // ce score manuel par l'activité du feu mesurée en direct par
+      // satellite (FIRMS), qui elle ne peut pas être fournie à la main.
       var surface = parseInt(table.getAttribute('data-surface') || '', 10);
       var hauteCumulee = surface;
+      var maj = 0;
 
-      d.jours.forEach(function (j) {
-        var tr = table.querySelector('tr[data-date="' + j.date + '"]');
-        var ligne = tr && tr.querySelector('.js-diff');
-        if (ligne) { poser(ligne, j.score); maj++; }
+      Array.prototype.forEach.call(table.querySelectorAll('tr[data-date]:not(.day-detail)'), function (tr) {
+        var jDate = tr.getAttribute('data-date');
+        var ligne = tr.querySelector('.js-diff');
+        var score = ligne && parseInt(ligne.textContent, 10);
+        if (!isFinite(score)) return;   // jour ajouté automatiquement, pas encore rempli à la main
 
-        // Pastille automatique : jour critique (difficulté ≥ 75) → fenêtre
-        // horaire calée sur l'heure la plus dangereuse du run ; sinon, le
-        // modèle qui couvre réellement la journée. La ligne critique prend
-        // aussi sa teinte rouge d'elle-même.
-        if (tr) {
-          tr.classList.toggle('peak', j.score >= 75);
-          var bouton = tr.querySelector('.day-toggle');
-          var pastille = bouton && bouton.querySelector('.tag');
-          if (bouton && !pastille) {
-            pastille = document.createElement('span');
-            bouton.appendChild(pastille);
-          }
-          if (pastille) {
-            if (j.score >= 75 && isFinite(j.pireHeure)) {
-              pastille.className = 'tag tag-red';
-              pastille.textContent = 'Fenêtre ' + Math.max(0, j.pireHeure - 2) + 'h–' + j.pireHeure + 'h';
-            } else if (j.modele === 'AROME' || j.modele === 'ARPEGE') {
-              pastille.className = 'tag tag-blue';
-              pastille.textContent = 'Prévision ' + j.modele;
-            }
-          }
-        }
-
-        // Le risque combine le score météo du jour et l'activité mesurée du
-        // feu aujourd'hui. Pour les jours à venir, cela revient à supposer
-        // que le front reste aussi actif qu'à la dernière mesure — c'est une
-        // hypothèse, pas une prévision de l'activité du feu.
         var pct = null;
         if (feu) {
-          pct = Math.round(seuilMeteo(j.score) * coefActivite(feu.frpTotal) * 100);
-          if (tr) poserRisque(tr, pct);
+          pct = Math.round(seuilMeteo(score) * coefActivite(feu.frpTotal) * 100);
+          poserRisque(tr, pct);
+          maj++;
         }
 
         // Projection automatique : borne basse, la surface confirmée (sans
         // nouvel orage de feu, le plateau tient) ; borne haute, le cumul —
         // jour après jour — du saut observé lors des deux orages de feu
         // (~10 000 ha) pondéré par le risque de chaque journée.
-        if (tr && isFinite(surface) && surface > 0) {
+        if (isFinite(surface) && surface > 0) {
           if (pct !== null) hauteCumulee += Math.round(pct * 10000 / 100 / 1000) * 1000;
-          var cellules2 = tr.querySelectorAll('td');
-          var celProj = cellules2[6];
+          var celProj = tr.querySelectorAll('td')[6];
           if (celProj) {
-            if (j.date === aujourdhui) {
+            if (jDate === aujourdhui) {
               celProj.textContent = surface.toLocaleString('fr-FR') + ' ha (dernier point préfecture)';
             } else if (pct !== null) {
               celProj.textContent = surface.toLocaleString('fr-FR') + ' – ' + hauteCumulee.toLocaleString('fr-FR') + ' ha';
             }
           }
         }
-
-        // Les colonnes météo affichées suivent aussi le dernier run : sans
-        // ça le tableau montrerait des relevés figés à côté d'un score frais.
-        if (tr && j.periodes && j.periodes.length) {
-          var tMax = Math.max.apply(null, j.periodes.map(function (p) { return p.t; }));
-          var hMin = Math.min.apply(null, j.periodes.map(function (p) { return p.hum; }));
-          var gMax = Math.max.apply(null, j.periodes.map(function (p) { return p.raf; }));
-          var cel = tr.querySelectorAll('td');
-          if (cel[1]) cel[1].textContent = Math.round(tMax) + ' °C';
-          if (cel[2]) cel[2].textContent = Math.round(hMin) + ' %';
-          if (cel[3]) cel[3].textContent = Math.round(gMax) + ' km/h';
-        }
-
-        var detail = table.querySelector('tr.day-detail[data-date="' + j.date + '"]');
-        if (!detail || !j.periodes) return;
-        var cartes = detail.querySelectorAll('.periode');
-        j.periodes.forEach(function (p, k) {
-          var c = cartes[k];
-          if (!c) return;
-          poser(c.querySelector('.p-score'), p.score);
-          var meta = c.querySelector('.p-meta');
-          if (meta) meta.textContent = Math.round(p.t) + ' °C · ' + Math.round(p.hum) + ' % · ' + Math.round(p.raf) + ' km/h';
-          var pic = c.querySelector('.p-pic');
-          if (pic) pic.textContent = 'pic à ' + p.heure + 'h';
-        });
       });
 
       // Blocs de run : l'heure réelle d'initialisation, lue dans les
@@ -310,7 +255,7 @@
       var marque = document.getElementById('fg-live');
       if (marque) {
         marque.classList.remove('stale');
-        marque.textContent = 'Mis à jour à l’instant — vous consultez les dernières données.';
+        marque.textContent = 'Risque d’orage de feu recalculé à l’instant à partir de l’activité du feu mesurée par satellite. Les conditions météo restent celles du dernier relevé Météociel.';
       }
     })
     .catch(function () { /* le tableau statique fait foi */ });
