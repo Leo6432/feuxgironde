@@ -142,12 +142,16 @@
     }
 
     // Les autres feux de France (hors du rayon Saumos, dernières 24h) : même
-    // technique de disques fondus que Saumos (canvas + ImageOverlay), pour
-    // le même style visuel — mais avec un rayon bien plus large, puisque ce
-    // sont des points isolés (un par foyer, déjà dédoublonnés côté serveur)
-    // et non une grille dense de détections répétées : à la grille fine de
-    // Saumos (~275 m), ces points isolés seraient de simples pixels invisibles
-    // une fois étalés sur toute la France.
+    // technique de disques fondus que Saumos (canvas + ImageOverlay, même
+    // grille de 275 m), mais UN CANEVAS PAR FOYER plutôt qu'un seul canevas
+    // pour toute la France. Un canevas unique national doit répartir sa
+    // résolution sur ~1000 km : chaque point y devient minuscule, et
+    // plusieurs détections proches (un vrai gros feu) fusionnent en une
+    // tache floue sans détail — exactement le défaut remarqué sur le feu
+    // des Alpes. En regroupant d'abord les points proches (un foyer =
+    // un groupe), chaque groupe a son propre petit canevas local, à la
+    // même résolution fine que Saumos : un point isolé reste un point net,
+    // et un vrai gros feu retrouve le même luxe de détail que Saumos.
     var CalqueCanvas = L.ImageOverlay.extend({
       _initImage: function () {
         var el = this._image = this._url;
@@ -158,17 +162,35 @@
       },
     });
 
-    function afficherAutres(autres) {
-      var pts = (autres || [])
-        .map(function (a) { return { lat: +a[0], lon: +a[1], frp: +a[2] || 0, ts: +a[3] }; })
-        .filter(function (p) { return isFinite(p.lat) && isFinite(p.lon); });
-      if (!pts.length) return;
+    // Regroupement simple par proximité (chaînage) : un point rejoint un
+    // groupe dès qu'il est à moins de seuilDeg d'un point déjà dedans.
+    function grouperParProximite(pts, seuilDeg) {
+      var groupes = [];
+      var visites = new Array(pts.length).fill(false);
+      for (var i = 0; i < pts.length; i++) {
+        if (visites[i]) continue;
+        var groupe = [];
+        var file = [i];
+        visites[i] = true;
+        while (file.length) {
+          var k = file.pop();
+          groupe.push(pts[k]);
+          for (var j = 0; j < pts.length; j++) {
+            if (visites[j]) continue;
+            var dLat = pts[k].lat - pts[j].lat, dLon = pts[k].lon - pts[j].lon;
+            if (Math.sqrt(dLat * dLat + dLon * dLon) <= seuilDeg) {
+              visites[j] = true;
+              file.push(j);
+            }
+          }
+        }
+        groupes.push(groupe);
+      }
+      return groupes;
+    }
 
-      // Beaucoup plus petit que la largeur de la marge (voir plus bas) :
-      // à l'échelle du pays, la résolution du canvas plafonne de toute
-      // façon (voir largeur/hauteur), donc réduire ce rayon donne des
-      // points nets plutôt que des taches, sans jamais disparaître.
-      var RAYON_DEG = 0.012;   // ≈ 1,3 km
+    function dessinerGroupeAutres(pts) {
+      var GRILLE = 0.0025;   // même grille que Saumos : même niveau de détail.
       var latMin = Infinity, latMax = -Infinity, lonMin = Infinity, lonMax = -Infinity;
       pts.forEach(function (p) {
         if (p.lat < latMin) latMin = p.lat;
@@ -176,14 +198,14 @@
         if (p.lon < lonMin) lonMin = p.lon;
         if (p.lon > lonMax) lonMax = p.lon;
       });
-      var marge = RAYON_DEG * 4;
+      var marge = GRILLE * 6;
       var sud = latMin - marge, nord = latMax + marge;
       var ouest = lonMin - marge, est = lonMax + marge;
 
-      var cosLat = Math.cos(SAUMOS[0] * Math.PI / 180);
-      var largeur = Math.max(64, Math.min(2400, Math.round((est - ouest) / RAYON_DEG * 13)));
+      var cosLat = Math.cos(((sud + nord) / 2) * Math.PI / 180);
+      var largeur = Math.max(48, Math.min(900, Math.round((est - ouest) / GRILLE * 13)));
       var echelleX = largeur / (est - ouest);
-      var hauteur = Math.max(64, Math.min(3200, Math.round((nord - sud) * echelleX / cosLat)));
+      var hauteur = Math.max(48, Math.min(900, Math.round((nord - sud) * echelleX / cosLat)));
       var echelleY = hauteur / (nord - sud);
 
       var cv = document.createElement('canvas');
@@ -191,8 +213,8 @@
       cv.height = hauteur;
       var ctx = cv.getContext('2d');
 
-      var rx = RAYON_DEG * echelleX * 0.9, ry = RAYON_DEG * echelleY * 0.9;
-      var flou = Math.max(1.2, rx * 0.22);
+      var rx = GRILLE * echelleX * 0.85, ry = GRILLE * echelleY * 0.85;
+      var flou = Math.max(1, rx * 0.25);
       var TAU = Math.PI * 2;
       var parClasse = [[], [], []];
       pts.forEach(function (p) {
@@ -202,7 +224,7 @@
       });
 
       ctx.filter = 'blur(' + flou + 'px)';
-      ctx.globalAlpha = 0.86;
+      ctx.globalAlpha = 0.88;
       parClasse.forEach(function (liste, i) {
         if (!liste.length) return;
         ctx.fillStyle = COULEURS_ACTIF[i];
@@ -217,20 +239,34 @@
       ctx.globalAlpha = 1;
 
       new CalqueCanvas(cv, [[sud, ouest], [nord, est]], { interactive: false }).addTo(carte);
+    }
+
+    function afficherAutres(autres) {
+      var pts = (autres || [])
+        .map(function (a) { return { lat: +a[0], lon: +a[1], frp: +a[2] || 0, ts: +a[3] }; })
+        .filter(function (p) { return isFinite(p.lat) && isFinite(p.lon); });
+      if (!pts.length) return;
+
+      // Seuil de regroupement : assez large pour recoller les détections
+      // d'un même foyer vues par des passages satellite légèrement décalés,
+      // assez petit pour ne pas fusionner deux feux vraiment distincts.
+      var groupes = grouperParProximite(pts, 0.03);
+      groupes.forEach(dessinerGroupeAutres);
 
       // Clic : même principe que pour Saumos, on ouvre le détail du point
       // le plus proche. Les deux jeux de points ne se chevauchent jamais
       // (« autres » exclut déjà le rayon Saumos côté serveur), donc les deux
       // gestionnaires de clic ne se marchent jamais dessus.
+      var cosLatClic = Math.cos(SAUMOS[0] * Math.PI / 180);
       carte.on('click', function (ev) {
         var meilleur = null, d2min = Infinity;
         pts.forEach(function (p) {
           var dLat = ev.latlng.lat - p.lat;
-          var dLon = (ev.latlng.lng - p.lon) * cosLat;
+          var dLon = (ev.latlng.lng - p.lon) * cosLatClic;
           var d2 = dLat * dLat + dLon * dLon;
           if (d2 < d2min) { d2min = d2; meilleur = p; }
         });
-        if (!meilleur || Math.sqrt(d2min) > RAYON_DEG * 1.5) return;
+        if (!meilleur || Math.sqrt(d2min) > 0.015) return;
         L.popup()
           .setLatLng([meilleur.lat, meilleur.lon])
           .setContent(
