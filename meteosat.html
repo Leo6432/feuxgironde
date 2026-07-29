@@ -31,7 +31,7 @@
     .then(function (d) {
       if (d && d.ok) {
         note.classList.remove('stale');
-        note.textContent = 'Connecté (étape « ' + d.etape + ' ') — collection ' + d.collection + '.';
+        note.textContent = 'Connecté (étape « ' + d.etape + ' ») — collection ' + d.collection + '.';
       } else {
         note.textContent = 'Échec à l’étape « ' + (d && d.etape) + ' » : ' + (d && d.raison);
       }
