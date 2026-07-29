@@ -139,6 +139,96 @@ function tsUtc(date, heure) {
   );
 }
 
+// Estimation du prochain passage satellite, à partir des horaires réels des
+// passages précédents (les VIIRS sont héliosynchrones : ils repassent chaque
+// jour à peu près à la même minute).
+//
+// Recalculer ce planning à chaque requête et le republier tel quel ferait
+// bouger l'heure annoncée d'une poignée de minutes à chaque fois que les
+// données sous-jacentes varient légèrement (nouvelle détection, cache FIRMS
+// qui se renouvelle) — avant même que le passage annoncé ait eu lieu. La
+// cible est donc figée en Redis dès qu'elle est choisie, et n'est révisée
+// qu'une fois confirmée : quand une détection réelle arrive à son heure ou
+// après, prouvant que ce passage a bien eu lieu.
+const MINUTE = 60000;
+const JOUR_MS = 86400000;
+
+function horairesPassages(enrichis) {
+  const ts = enrichis.map((p) => tsUtc(p.date, p.heure)).sort((a, b) => a - b);
+  const passes = [];
+  let debut = null, dernier = null;
+  ts.forEach((t) => {
+    if (dernier === null || t - dernier > 40 * MINUTE) {
+      if (dernier !== null) passes.push((debut + dernier) / 2);
+      debut = t;
+    }
+    dernier = t;
+  });
+  if (dernier !== null) passes.push((debut + dernier) / 2);
+  if (passes.length < 4) return null;   // trop peu pour une habitude fiable
+
+  const minutes = passes.map((t) => {
+    const d = new Date(t);
+    return d.getUTCHours() * 60 + d.getUTCMinutes();
+  }).sort((a, b) => a - b);
+
+  const groupes = [];
+  minutes.forEach((m) => {
+    const g = groupes[groupes.length - 1];
+    if (!g || m - g[g.length - 1] > 90) groupes.push([m]);
+    else g.push(m);
+  });
+  // Un passage à cheval sur minuit UTC se retrouverait coupé en deux
+  // groupes, un à chaque bout de la journée : on les recolle.
+  if (groupes.length > 1) {
+    const premier = groupes[0], final = groupes[groupes.length - 1];
+    if (premier[0] + 1440 - final[final.length - 1] <= 90) {
+      groupes.pop();
+      groupes[0] = final.map((x) => x - 1440).concat(premier);
+    }
+  }
+  return groupes.map((g) => {
+    const somme = g.reduce((a, b) => a + b, 0);
+    return ((Math.round(somme / g.length) % 1440) + 1440) % 1440;
+  });
+}
+
+function prochainCandidat(horaires, apartirDe) {
+  const minuit = Math.floor(apartirDe / JOUR_MS) * JOUR_MS;
+  let candidat = null;
+  horaires.forEach((m) => {
+    for (let j = 0; j < 2; j++) {
+      const t = minuit + j * JOUR_MS + m * MINUTE;
+      if (t > apartirDe + 5 * MINUTE && (candidat === null || t < candidat)) candidat = t;
+    }
+  });
+  return candidat;
+}
+
+async function prochainPassageFige(redis, enrichis, derniereTs) {
+  const CLE = 'firms:passage:v1';
+  const horaires = horairesPassages(enrichis);
+  let etat = null;
+  try {
+    const brut = redis ? await redis.get(CLE) : null;
+    etat = brut ? JSON.parse(brut) : null;
+  } catch (e) { /* on repart d'une cible neuve */ }
+
+  const maintenant = Date.now();
+  // Confirmée : une détection réelle est arrivée à l'heure annoncée ou
+  // après — ce passage a eu lieu, on peut viser le suivant.
+  const confirmee = etat && etat.cible && isFinite(derniereTs) && derniereTs >= etat.cible;
+
+  let cible = etat && etat.cible;
+  if (!cible || confirmee) {
+    cible = horaires ? prochainCandidat(horaires, confirmee ? Math.max(derniereTs, maintenant) : maintenant) : null;
+    if (redis && cible) {
+      try { await redis.set(CLE, JSON.stringify({ cible }), { EX: 6 * 3600 }); } catch (e) { /* tant pis */ }
+    }
+  }
+  return cible || null;
+}
+
 function parametreJours(req) {
   if (req && req.query && req.query.jours) return String(req.query.jours);
   try {
@@ -169,9 +259,8 @@ module.exports = async (req, res) => {
   // Cache serveur : le cache CDN ne couvre qu'une région et repart de zéro à
   // chaque déploiement. Une fenêtre longue coûte cher côté FIRMS (deux
   // capteurs, plusieurs milliers de lignes), donc on la garde en Redis.
-  // v7 : rayon porté à 34 km (feu annoncé à Lanton et au Grand Crohot) —
-  // les entrées précédentes ont les lobes sud et sud-ouest coupés.
-  const cleCache = 'firms:v7:' + jours;
+  // v8 : ajout de prochainPasse — les entrées précédentes n'ont pas ce champ.
+  const cleCache = 'firms:v8:' + jours;
   let redis = null;
   try {
     const p = getClient();
@@ -297,6 +386,9 @@ module.exports = async (req, res) => {
       Math.round(distanceKm(LAT, LON, c.lat, c.lon)),
     ]);
 
+  const derniereTs = enrichis[0] ? tsUtc(enrichis[0].date, enrichis[0].heure) : null;
+  const prochainPasse = await prochainPassageFige(redis, enrichis, derniereTs);
+
   const sortie = {
     ok: true,
     source: 'NASA FIRMS · VIIRS (SNPP, NOAA-20, NOAA-21)',
@@ -315,7 +407,11 @@ module.exports = async (req, res) => {
     derniereDetection: enrichis[0] ? `${enrichis[0].date} ${enrichis[0].heure}` : null,
     // Même instant en millisecondes : les pages l'affichent en heure locale,
     // là où la chaîne ci-dessus reste le libellé UTC brut de FIRMS.
-    derniereTs: enrichis[0] ? tsUtc(enrichis[0].date, enrichis[0].heure) : null,
+    derniereTs,
+    // Prochain passage estimé (ms epoch), figé jusqu'à confirmation — voir
+    // prochainPassageFige(). null si l'historique est trop court pour en
+    // tirer une habitude fiable.
+    prochainPasse,
     parJour: joursListe,
     grille: GRILLE,
     origine: ORIGINE,

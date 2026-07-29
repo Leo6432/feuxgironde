@@ -20,7 +20,6 @@
   var SAUMOS = [44.98, -1.02];
   var MINUTE = 60000;
   var HEURE = 3600000;
-  var JOUR = 86400000;
   var FENETRE_ACTIVE_H = 6;
 
   var COULEUR_BRULE = '#E8DDB0';
@@ -95,73 +94,20 @@
       if (d) d.textContent = derniere || '—';
     }
 
-    // Les satellites VIIRS sont héliosynchrones : ils repassent chaque jour
-    // aux mêmes heures à quelques minutes près. Plutôt qu'un calcul d'orbite,
-    // on retrouve ces horaires dans les détections elles-mêmes — les instants
-    // t0/t1 se regroupent par passage — et on projette le prochain.
-    function prochainPassage(cellules) {
-      var ts = [];
-      cellules.forEach(function (c) {
-        ts.push(c.t0);
-        if (c.t1 > c.t0) ts.push(c.t1);
-      });
-      ts.sort(function (a, b) { return a - b; });
-
-      var passes = [], debut = null, dernier = null;
-      ts.forEach(function (t) {
-        if (dernier === null || t - dernier > 40 * MINUTE) {
-          if (dernier !== null) passes.push((debut + dernier) / 2);
-          debut = t;
-        }
-        dernier = t;
-      });
-      if (dernier !== null) passes.push((debut + dernier) / 2);
-      if (passes.length < 4) return null;   // trop peu pour une habitude fiable
-
-      var minutes = passes.map(function (t) {
-        var d = new Date(t);
-        return d.getUTCHours() * 60 + d.getUTCMinutes();
-      }).sort(function (a, b) { return a - b; });
-
-      var groupes = [];
-      minutes.forEach(function (m) {
-        var g = groupes[groupes.length - 1];
-        if (!g || m - g[g.length - 1] > 90) groupes.push([m]);
-        else g.push(m);
-      });
-      // Un passage à cheval sur minuit UTC se retrouverait coupé en deux
-      // groupes, un à chaque bout de la journée : on les recolle.
-      if (groupes.length > 1) {
-        var premier = groupes[0], final = groupes[groupes.length - 1];
-        if (premier[0] + 1440 - final[final.length - 1] <= 90) {
-          groupes.pop();
-          groupes[0] = final.map(function (x) { return x - 1440; }).concat(premier);
-        }
-      }
-
-      var maintenant = Date.now();
-      var minuit = Math.floor(maintenant / JOUR) * JOUR;
-      var prochain = null;
-      groupes.forEach(function (g) {
-        var somme = 0;
-        g.forEach(function (x) { somme += x; });
-        var m = ((Math.round(somme / g.length) % 1440) + 1440) % 1440;
-        for (var j = 0; j < 2; j++) {
-          var t = minuit + j * JOUR + m * MINUTE;
-          if (t > maintenant + 5 * MINUTE && (prochain === null || t < prochain)) prochain = t;
-        }
-      });
-      return prochain;
-    }
-
-    function afficherPassage(cellules) {
+    // L'heure du prochain passage est calculée et figée côté serveur (voir
+    // prochainPassageFige dans /api/firms) : elle ne doit pas changer tant
+    // que ce passage n'a pas réellement eu lieu, même si les données
+    // sous-jacentes bougent légèrement entre deux rafraîchissements de page.
+    // Le client se contente d'afficher un compte à rebours vers cette cible
+    // fixe — jamais de recalcul local.
+    function afficherPassage(cible) {
       var valeur = document.getElementById('fg-carte-passe');
       var detail = document.getElementById('fg-carte-passe-detail');
       if (!valeur) return;
+      if (!cible) { valeur.textContent = '—'; return; }
       function maj() {
-        var prochain = prochainPassage(cellules);
-        if (!prochain) { valeur.textContent = '—'; return; }
-        var attente = prochain - Date.now();
+        var attente = cible - Date.now();
+        if (attente <= 0) { valeur.textContent = 'en cours'; return; }
         var h = Math.floor(attente / HEURE);
         var mn = Math.round((attente % HEURE) / MINUTE);
         valeur.textContent = h
@@ -169,9 +115,9 @@
           : 'dans ≈ ' + mn + ' min';
         if (detail) {
           var opts = { day: 'numeric', timeZone: FUSEAU };
-          var libJour = partie(prochain, opts, 'day') === partie(Date.now(), opts, 'day')
+          var libJour = partie(cible, opts, 'day') === partie(Date.now(), opts, 'day')
             ? 'aujourd’hui' : 'demain';
-          detail.textContent = libJour + ' vers ' + heureMinFr(prochain) +
+          detail.textContent = libJour + ' vers ' + heureMinFr(cible) +
             ' (heure française) — estimé d’après les horaires des passages précédents';
         }
       }
@@ -215,12 +161,12 @@
           note.textContent = texte;
         }
 
+        afficherPassage(isFinite(d.prochainPasse) ? d.prochainPasse : null);
+
         if (!cellules.length) {
           chiffres(0, 0, d.derniereDetection);
           return;
         }
-
-        afficherPassage(cellules);
 
         var grille = +d.grille || 0.0025;
         var latMin = Infinity, latMax = -Infinity, lonMin = Infinity, lonMax = -Infinity;
