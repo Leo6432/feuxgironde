@@ -141,27 +141,100 @@
       bloc.removeAttribute('hidden');
     }
 
-    // Les autres feux de France (hors du rayon Saumos, dernières 24h) : de
-    // simples points, sans l'animation ni les prédictions propres à Saumos —
-    // juste un repérage, affiché en plus dès qu'on dézoome ou qu'on se
-    // déplace sur la carte.
+    // Les autres feux de France (hors du rayon Saumos, dernières 24h) : même
+    // technique de disques fondus que Saumos (canvas + ImageOverlay), pour
+    // le même style visuel — mais avec un rayon bien plus large, puisque ce
+    // sont des points isolés (un par foyer, déjà dédoublonnés côté serveur)
+    // et non une grille dense de détections répétées : à la grille fine de
+    // Saumos (~275 m), ces points isolés seraient de simples pixels invisibles
+    // une fois étalés sur toute la France.
+    var CalqueCanvas = L.ImageOverlay.extend({
+      _initImage: function () {
+        var el = this._image = this._url;
+        L.DomUtil.addClass(el, 'leaflet-image-layer');
+        if (this._zoomAnimated) L.DomUtil.addClass(el, 'leaflet-zoom-animated');
+        el.onselectstart = L.Util.falseFn;
+        el.onmousemove = L.Util.falseFn;
+      },
+    });
+
     function afficherAutres(autres) {
-      (autres || []).forEach(function (a) {
-        var lat = +a[0], lon = +a[1], frp = +a[2] || 0, ts = +a[3];
-        if (!isFinite(lat) || !isFinite(lon)) return;
-        L.circleMarker([lat, lon], {
-          radius: 5,
-          color: '#D8232E',
-          weight: 1,
-          fillColor: '#EE8A17',
-          fillOpacity: 0.85,
-        })
-          .bindPopup(
-            '<strong>' + (frp ? '≈ ' + Math.round(frp) + ' MW' : 'puissance inconnue') + '</strong><br>' +
-            (isFinite(ts) ? 'détecté ' + heureFr(ts) : '') +
+      var pts = (autres || [])
+        .map(function (a) { return { lat: +a[0], lon: +a[1], frp: +a[2] || 0, ts: +a[3] }; })
+        .filter(function (p) { return isFinite(p.lat) && isFinite(p.lon); });
+      if (!pts.length) return;
+
+      var RAYON_DEG = 0.04;   // ≈ 4-5 km : lisible à l'échelle du pays.
+      var latMin = Infinity, latMax = -Infinity, lonMin = Infinity, lonMax = -Infinity;
+      pts.forEach(function (p) {
+        if (p.lat < latMin) latMin = p.lat;
+        if (p.lat > latMax) latMax = p.lat;
+        if (p.lon < lonMin) lonMin = p.lon;
+        if (p.lon > lonMax) lonMax = p.lon;
+      });
+      var marge = RAYON_DEG * 4;
+      var sud = latMin - marge, nord = latMax + marge;
+      var ouest = lonMin - marge, est = lonMax + marge;
+
+      var cosLat = Math.cos(SAUMOS[0] * Math.PI / 180);
+      var largeur = Math.max(64, Math.min(2400, Math.round((est - ouest) / RAYON_DEG * 13)));
+      var echelleX = largeur / (est - ouest);
+      var hauteur = Math.max(64, Math.min(3200, Math.round((nord - sud) * echelleX / cosLat)));
+      var echelleY = hauteur / (nord - sud);
+
+      var cv = document.createElement('canvas');
+      cv.width = largeur;
+      cv.height = hauteur;
+      var ctx = cv.getContext('2d');
+
+      var rx = RAYON_DEG * echelleX * 0.9, ry = RAYON_DEG * echelleY * 0.9;
+      var flou = Math.max(1.2, rx * 0.22);
+      var TAU = Math.PI * 2;
+      var parClasse = [[], [], []];
+      pts.forEach(function (p) {
+        p.px = (p.lon - ouest) * echelleX;
+        p.py = (nord - p.lat) * echelleY;
+        parClasse[classeFrp(p.frp)].push(p);
+      });
+
+      ctx.filter = 'blur(' + flou + 'px)';
+      ctx.globalAlpha = 0.86;
+      parClasse.forEach(function (liste, i) {
+        if (!liste.length) return;
+        ctx.fillStyle = COULEURS_ACTIF[i];
+        ctx.beginPath();
+        liste.forEach(function (p) {
+          ctx.moveTo(p.px + rx, p.py);
+          ctx.ellipse(p.px, p.py, rx, ry, 0, 0, TAU);
+        });
+        ctx.fill();
+      });
+      ctx.filter = 'none';
+      ctx.globalAlpha = 1;
+
+      new CalqueCanvas(cv, [[sud, ouest], [nord, est]], { interactive: false }).addTo(carte);
+
+      // Clic : même principe que pour Saumos, on ouvre le détail du point
+      // le plus proche. Les deux jeux de points ne se chevauchent jamais
+      // (« autres » exclut déjà le rayon Saumos côté serveur), donc les deux
+      // gestionnaires de clic ne se marchent jamais dessus.
+      carte.on('click', function (ev) {
+        var meilleur = null, d2min = Infinity;
+        pts.forEach(function (p) {
+          var dLat = ev.latlng.lat - p.lat;
+          var dLon = (ev.latlng.lng - p.lon) * cosLat;
+          var d2 = dLat * dLat + dLon * dLon;
+          if (d2 < d2min) { d2min = d2; meilleur = p; }
+        });
+        if (!meilleur || Math.sqrt(d2min) > RAYON_DEG * 1.5) return;
+        L.popup()
+          .setLatLng([meilleur.lat, meilleur.lon])
+          .setContent(
+            '<strong>' + (meilleur.frp ? '≈ ' + Math.round(meilleur.frp) + ' MW' : 'puissance inconnue') + '</strong><br>' +
+            (isFinite(meilleur.ts) ? 'détecté ' + heureFr(meilleur.ts) : '') +
             '<br><span style="opacity:.75">Autre feu, hors du suivi détaillé de Saumos</span>'
           )
-          .addTo(carte);
+          .openOn(carte);
       });
     }
 
@@ -254,15 +327,8 @@
 
         // ImageOverlay sait déjà positionner, étirer et animer une image entre
         // deux coins géographiques ; on lui donne le canvas à la place.
-        var CalqueCanvas = L.ImageOverlay.extend({
-          _initImage: function () {
-            var el = this._image = this._url;
-            L.DomUtil.addClass(el, 'leaflet-image-layer');
-            if (this._zoomAnimated) L.DomUtil.addClass(el, 'leaflet-zoom-animated');
-            el.onselectstart = L.Util.falseFn;
-            el.onmousemove = L.Util.falseFn;
-          },
-        });
+        // (CalqueCanvas est défini une fois plus haut, partagé avec le calque
+        // « autres feux ».)
         new CalqueCanvas(cnvAffiche, [[sud, ouest], [nord, est]], { interactive: false }).addTo(carte);
 
         var bornes = L.latLngBounds([[sud, ouest], [nord, est]]).extend(SAUMOS);
