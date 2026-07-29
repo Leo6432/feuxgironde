@@ -206,7 +206,7 @@ function prochainCandidat(horaires, apartirDe) {
 }
 
 async function prochainPassageFige(redis, enrichis, derniereTs) {
-  const CLE = 'firms:passage:v1';
+  const CLE = 'firms:passage:v2';
   const horaires = horairesPassages(enrichis);
   let etat = null;
   try {
@@ -215,15 +215,22 @@ async function prochainPassageFige(redis, enrichis, derniereTs) {
   } catch (e) { /* on repart d'une cible neuve */ }
 
   const maintenant = Date.now();
-  // Confirmée : une détection réelle est arrivée à l'heure annoncée ou
-  // après — ce passage a eu lieu, on peut viser le suivant.
-  const confirmee = etat && etat.cible && isFinite(derniereTs) && derniereTs >= etat.cible;
+  // Confirmée : deux conditions, pas une seule. Il ne suffit pas que la
+  // dernière détection connue dépasse l'heure annoncée — un décalage de
+  // calcul pourrait le rendre vrai dès la première estimation, sans qu'aucun
+  // nouveau passage n'ait eu lieu. Il faut aussi qu'une détection *plus
+  // récente que celle vue au moment où la cible a été fixée* soit arrivée :
+  // la preuve que le site a bien reçu une mise à jour depuis.
+  const nouvelleDonnee = etat && isFinite(etat.vueA) && isFinite(derniereTs) && derniereTs > etat.vueA;
+  const confirmee = etat && etat.cible && nouvelleDonnee && derniereTs >= etat.cible;
 
   let cible = etat && etat.cible;
   if (!cible || confirmee) {
     cible = horaires ? prochainCandidat(horaires, confirmee ? Math.max(derniereTs, maintenant) : maintenant) : null;
     if (redis && cible) {
-      try { await redis.set(CLE, JSON.stringify({ cible }), { EX: 6 * 3600 }); } catch (e) { /* tant pis */ }
+      try {
+        await redis.set(CLE, JSON.stringify({ cible, vueA: isFinite(derniereTs) ? derniereTs : 0 }), { EX: 6 * 3600 });
+      } catch (e) { /* tant pis */ }
     }
   }
   return cible || null;
