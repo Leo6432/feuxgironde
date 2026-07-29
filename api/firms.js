@@ -268,8 +268,22 @@ async function prochainPassageFige(redis, horaires, derniereTs) {
   const nouvelleDonnee = etat && isFinite(etat.vueA) && isFinite(derniereTs) && derniereTs > etat.vueA;
   const confirmee = etat && etat.cible && nouvelleDonnee && derniereTs >= etat.cible;
 
+  // Filet de sécurité : si la cible est dépassée depuis longtemps SANS être
+  // confirmée, c'est qu'elle a probablement été calculée sur un historique
+  // encore incomplet au moment où elle a été fixée (un satellite dont
+  // l'habitude n'était pas encore établie, par exemple) — une prédiction
+  // fausse dès le départ, qu'aucune détection ne viendra jamais confirmer
+  // avant le vrai prochain passage. Sans ce filet, la page resterait sur
+  // « en cours » pendant tout l'écart entre la fausse cible et le vrai
+  // passage suivant, parfois plusieurs heures. Passé ce délai, on abandonne
+  // et on recalcule avec l'historique désormais à jour — largement au-delà
+  // du délai de publication habituel de FIRMS, pour ne pas corriger une
+  // cible encore simplement en attente de confirmation normale.
+  const MARGE_ABANDON_MS = 90 * MINUTE;
+  const perimee = etat && etat.cible && !confirmee && (maintenant - etat.cible > MARGE_ABANDON_MS);
+
   let cible = etat && etat.cible;
-  if (!cible || confirmee) {
+  if (!cible || confirmee || perimee) {
     cible = horaires ? prochainCandidat(horaires, confirmee ? Math.max(derniereTs, maintenant) : maintenant) : null;
     if (redis && cible) {
       try {
