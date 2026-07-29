@@ -112,12 +112,15 @@ async function dernierProduit(jeton) {
   // Recherche les produits les plus récents de la collection, triés du plus
   // récent au plus ancien — on ne demande que les métadonnées (pas le
   // fichier lui-même) pour cette première étape.
+  // « sort » retiré : c'était un format inventé sans certitude, et il a
+  // fait échouer la requête (InvalidParameterValue). On se limite aux
+  // paramètres dont le nom est bien documenté (pi, si, c, format) et on
+  // laisse l'API renvoyer son tri par défaut pour cette première étape.
   const u = new URL(RECHERCHE_URL);
   u.searchParams.set('format', 'json');
   u.searchParams.set('pi', COLLECTION_FRP);
   u.searchParams.set('si', '0');
   u.searchParams.set('c', '5');
-  u.searchParams.set('sort', 'desc,start,time');
 
   const r = await requeteAvecDelai(u.toString(), { headers: { Authorization: `Bearer ${jeton}` } });
   const texte = await r.text();
