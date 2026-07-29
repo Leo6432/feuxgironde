@@ -183,6 +183,11 @@ module.exports = async (req, res) => {
       // Si ce n'est pas un zip, ce sont peut-être directement les premiers
       // octets d'un NetCDF (signature "CDF" ou "HDF") — utile à savoir.
       premiersOctets: tampon.slice(0, 8).toString('hex'),
+      // Un fichier de quelques centaines d'octets qui n'est pas un zip est
+      // presque sûrement du texte (message d'erreur JSON de l'API) plutôt
+      // qu'un vrai produit satellite (attendu : plusieurs Mo) — on le
+      // révèle en clair plutôt que de ne garder que les octets bruts.
+      apercuTexte: tampon.length < 5000 ? sansSecret(tampon.toString('utf8'), [cle, secret, jeton]) : null,
     });
     return;
   }
