@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test EUMETSAT/Meteosat — page expérimentale (Feux Gironde)</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div class="container page-head">
+  <span class="kicker">Page de test — non liée au site public</span>
+  <h1>Connexion EUMETSAT (Meteosat FRP)</h1>
+  <p class="measure">Étape 1 seulement : vérifier qu'on peut s'authentifier et voir la fraîcheur du produit FRP (Fire Radiative Power) dérivé de Meteosat, avant de tenter l'extraction des pixels autour de Saumos — qui demandera de décoder la projection géostationnaire du satellite, une étape séparée pas encore écrite. Cette page n'est reliée à aucun menu et n'affecte pas <a href="/carte.html">la carte existante</a>.</p>
+</div>
+
+<section class="section" style="padding-top:0">
+  <div class="container">
+    <p id="fg-meteosat-note" class="live-note stale">Connexion à EUMETSAT en cours…</p>
+    <pre id="fg-meteosat-detail" style="background:#f4f4f4;border-radius:8px;padding:16px;overflow:auto;font-size:13px;white-space:pre-wrap"></pre>
+  </div>
+</section>
+
+<script>
+(function () {
+  var note = document.getElementById('fg-meteosat-note');
+  var detail = document.getElementById('fg-meteosat-detail');
+  fetch('/api/meteosat')
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d && d.ok) {
+        note.classList.remove('stale');
+        note.textContent = 'Connecté (étape « ' + d.etape + ' ') — collection ' + d.collection + '.';
+      } else {
+        note.textContent = 'Échec à l’étape « ' + (d && d.etape) + ' » : ' + (d && d.raison);
+      }
+      detail.textContent = JSON.stringify(d, null, 2);
+    })
+    .catch(function (e) {
+      note.textContent = 'Requête impossible : ' + e.message;
+    });
+})();
+</script>
+
+</body>
+</html>
