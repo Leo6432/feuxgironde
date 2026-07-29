@@ -66,6 +66,37 @@ async function obtenirJeton(cle, secret) {
   return json.access_token;
 }
 
+// L'identifiant de collection deviné (EO:EUM:DAT:MSG:FRP-PIXEL) n'existe pas
+// sous ce nom : plutôt que deviner à nouveau à l'aveugle, on demande à l'API
+// elle-même la liste de ses collections et on filtre celles qui parlent de
+// feu. Deux chemins possibles pour cette liste (jamais vérifiés en direct) :
+// le premier qui répond correctement est utilisé.
+const CANDIDATS_COLLECTIONS = [
+  'https://api.eumetsat.int/data/browse/1.0.0/collections',
+  'https://api.eumetsat.int/data/browse/collections',
+];
+
+async function chercherCollectionsFeu(jeton) {
+  for (const url of CANDIDATS_COLLECTIONS) {
+    try {
+      const r = await requeteAvecDelai(url, { headers: { Authorization: `Bearer ${jeton}` } });
+      const texte = await r.text();
+      if (!r.ok) continue;
+      let json;
+      try { json = JSON.parse(texte); } catch (e) { continue; }
+      // Schéma exact inconnu : on prend la première liste trouvée, quelle
+      // que soit la clé qui la porte.
+      const liste = Array.isArray(json) ? json
+        : (json.collections || json.features || json.items || []);
+      if (!Array.isArray(liste)) continue;
+      const correspond = /fire|frp|radiative|incend/i;
+      const trouvees = liste.filter((c) => correspond.test(JSON.stringify(c)));
+      return { url, total: liste.length, trouvees: trouvees.slice(0, 10) };
+    } catch (e) { /* candidat suivant */ }
+  }
+  return null;
+}
+
 async function dernierProduit(jeton) {
   // Recherche les produits les plus récents de la collection, triés du plus
   // récent au plus ancien — on ne demande que les métadonnées (pas le
@@ -134,10 +165,19 @@ module.exports = async (req, res) => {
       brut: resultat,
     });
   } catch (e) {
+    const messagePropre = sansSecret(e.message, [cle, secret, jeton]);
+    // Si la collection devinée n'existe pas, on cherche la bonne toute
+    // seule plutôt que de simplement remonter l'échec.
+    let suggestions = null;
+    if (/collection/i.test(messagePropre)) {
+      try { suggestions = await chercherCollectionsFeu(jeton); } catch (e2) { /* tant pis */ }
+    }
     res.status(200).json({
       ok: false,
       etape: 'recherche_produits',
-      raison: sansSecret(e.message, [cle, secret, jeton]),
+      raison: messagePropre,
+      collectionEssayee: COLLECTION_FRP,
+      suggestions,
     });
   }
 };

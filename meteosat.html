@@ -34,6 +34,10 @@
         note.textContent = 'Connecté (étape « ' + d.etape + ' ») — collection ' + d.collection + '.';
       } else {
         note.textContent = 'Échec à l’étape « ' + (d && d.etape) + ' » : ' + (d && d.raison);
+        if (d && d.suggestions && d.suggestions.trouvees && d.suggestions.trouvees.length) {
+          note.textContent += ' — collections trouvées : ' +
+            d.suggestions.trouvees.map(function (c) { return JSON.stringify(c); }).join(' | ');
+        }
       }
       detail.textContent = JSON.stringify(d, null, 2);
     })
