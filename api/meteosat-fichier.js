@@ -5,24 +5,26 @@
 // noms des variables NetCDF (latitude/longitude/FRP), inconnus avec
 // certitude sans avoir jamais ouvert un de ces fichiers.
 //
-// Le vrai risque de cette étape : la taille du fichier ET le temps total.
-// Une fonction serverless Vercel (plan gratuit) a une limite d'environ 10s
-// pour TOUTE la requête (authentification + téléchargement + ouverture du
-// zip + lecture NetCDF cumulés) — pas 10s par étape. La première version de
-// ce fichier allouait jusqu'à 4s + 8s rien que pour l'authentification et le
-// téléchargement, donc jusqu'à 12s à elle seule : Vercel tuait la fonction
-// avant la fin et renvoyait sa propre page d'erreur générique (pas du JSON),
-// ce qui cassait la page ("Unexpected token 'A', "A server e"... n'est pas
-// du JSON valide"). Corrigé en suivant un budget de temps global unique,
-// partagé entre toutes les étapes, avec un abandon propre (message JSON
-// clair) dès qu'il ne reste plus assez de temps pour continuer — plutôt que
-// de laisser Vercel couper la fonction en pleine réponse.
+// Le vrai risque de cette étape : la taille du fichier et le temps total.
+// Un budget de temps global (voir BUDGET_TOTAL_MS) évite qu'une étape lente
+// laisse la fonction tourner indéfiniment.
 const BUDGET_TOTAL_MS = 8000;
 
 const TAILLE_MAX_OCTETS = 20 * 1024 * 1024;
 
 const JSZip = require('jszip');
-const { NetCDFReader } = require('netcdfjs');
+// netcdfjs est distribué en ESM pur ("type": "module" dans son package.json)
+// — un require() classique le fait planter au chargement du fichier sur les
+// environnements Node où require() d'un module ESM n'est pas supporté
+// (c'était la vraie cause du plantage HTTP 500 "FUNCTION_INVOCATION_FAILED"
+// observé sur Vercel : 0 requête sortante, échec en ~200ms, donc avant même
+// la moindre tentative réseau — un crash au chargement du module, pas un
+// problème de temps ou de réseau). Un import() dynamique fonctionne partout.
+let NetCDFReaderPromise = null;
+function chargerNetCDFReader() {
+  if (!NetCDFReaderPromise) NetCDFReaderPromise = import('netcdfjs').then((m) => m.NetCDFReader);
+  return NetCDFReaderPromise;
+}
 
 const TOKEN_URL = 'https://api.eumetsat.int/token';
 
@@ -208,6 +210,7 @@ module.exports = async (req, res) => {
         tempsRestant() - MARGE_MS,
         'extraction du fichier NetCDF',
       );
+      const NetCDFReader = await chargerNetCDFReader();
       const nc = new NetCDFReader(contenu);
       sortie.variables = nc.variables.map((v) => ({
         nom: v.name,
