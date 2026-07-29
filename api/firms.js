@@ -41,10 +41,17 @@ function joursDepuisDepart() {
   return Math.min(JOURS_MAX, Math.max(1, ecoules));
 }
 
-// Trois satellites VIIRS : leurs passages sont décalés de quelques dizaines
-// de minutes à quelques heures, les combiner multiplie les passages couverts
-// — c'est ce qui fait la fraîcheur de la « dernière détection ».
-const CAPTEURS = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT'];
+// Trois satellites VIIRS, plus MODIS (Terra + Aqua, combinés par la NASA
+// sous un seul identifiant NRT) : leurs passages sont décalés de quelques
+// dizaines de minutes à quelques heures les uns des autres, les combiner
+// multiplie les passages couverts — c'est ce qui fait la fraîcheur de la
+// « dernière détection ». MODIS a un pixel plus grossier (~1 km contre
+// ~375 m pour VIIRS) : ses détections restent utiles pour la fraîcheur,
+// moins précises pour la forme des zones.
+// Sentinel-3 n'est volontairement pas inclus : ses détections d'incendie
+// sont distribuées par Copernicus/EUMETSAT, pas par cette API FIRMS — les
+// ajouter demanderait une intégration séparée, pas encore vérifiée.
+const CAPTEURS = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT', 'MODIS_NRT'];
 
 function distanceKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -266,8 +273,8 @@ module.exports = async (req, res) => {
   // Cache serveur : le cache CDN ne couvre qu'une région et repart de zéro à
   // chaque déploiement. Une fenêtre longue coûte cher côté FIRMS (deux
   // capteurs, plusieurs milliers de lignes), donc on la garde en Redis.
-  // v8 : ajout de prochainPasse — les entrées précédentes n'ont pas ce champ.
-  const cleCache = 'firms:v8:' + jours;
+  // v9 : ajout de MODIS_NRT — les entrées précédentes n'ont que les VIIRS.
+  const cleCache = 'firms:v9:' + jours;
   let redis = null;
   try {
     const p = getClient();
@@ -398,7 +405,7 @@ module.exports = async (req, res) => {
 
   const sortie = {
     ok: true,
-    source: 'NASA FIRMS · VIIRS (SNPP, NOAA-20, NOAA-21)',
+    source: 'NASA FIRMS · VIIRS (SNPP, NOAA-20, NOAA-21) + MODIS',
     fenetre: joursObtenus === 1 ? 'dernières 24h' : `derniers ${joursObtenus} jours`,
     jours: joursObtenus,
     depuis: DEPART_FEU,
