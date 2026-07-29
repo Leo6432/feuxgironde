@@ -41,17 +41,18 @@ function joursDepuisDepart() {
   return Math.min(JOURS_MAX, Math.max(1, ecoules));
 }
 
-// Trois satellites VIIRS, plus MODIS (Terra + Aqua, combinés par la NASA
-// sous un seul identifiant NRT) : leurs passages sont décalés de quelques
-// dizaines de minutes à quelques heures les uns des autres, les combiner
+// Trois satellites VIIRS, MODIS (Terra + Aqua, combinés par la NASA sous un
+// seul identifiant NRT) et Landsat : leurs passages sont décalés de quelques
+// dizaines de minutes à quelques jours les uns des autres, les combiner
 // multiplie les passages couverts — c'est ce qui fait la fraîcheur de la
 // « dernière détection ». MODIS a un pixel plus grossier (~1 km contre
-// ~375 m pour VIIRS) : ses détections restent utiles pour la fraîcheur,
-// moins précises pour la forme des zones.
+// ~375 m pour VIIRS) ; Landsat est bien plus fin (~30 m) mais ne repasse au
+// même endroit que tous les 8 à 16 jours — utile pour un contour précis
+// s'il tombe juste, sans effet sur la fraîcheur au quotidien.
 // Sentinel-3 n'est volontairement pas inclus : ses détections d'incendie
 // sont distribuées par Copernicus/EUMETSAT, pas par cette API FIRMS — les
 // ajouter demanderait une intégration séparée, pas encore vérifiée.
-const CAPTEURS = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT', 'MODIS_NRT'];
+const CAPTEURS = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT', 'MODIS_NRT', 'LANDSAT_NRT'];
 
 function distanceKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -212,9 +213,8 @@ function prochainCandidat(horaires, apartirDe) {
   return candidat;
 }
 
-async function prochainPassageFige(redis, enrichis, derniereTs) {
+async function prochainPassageFige(redis, horaires, derniereTs) {
   const CLE = 'firms:passage:v2';
-  const horaires = horairesPassages(enrichis);
   let etat = null;
   try {
     const brut = redis ? await redis.get(CLE) : null;
@@ -273,8 +273,8 @@ module.exports = async (req, res) => {
   // Cache serveur : le cache CDN ne couvre qu'une région et repart de zéro à
   // chaque déploiement. Une fenêtre longue coûte cher côté FIRMS (deux
   // capteurs, plusieurs milliers de lignes), donc on la garde en Redis.
-  // v9 : ajout de MODIS_NRT — les entrées précédentes n'ont que les VIIRS.
-  const cleCache = 'firms:v9:' + jours;
+  // v10 : ajout de LANDSAT_NRT et du planning des passages observés.
+  const cleCache = 'firms:v10:' + jours;
   let redis = null;
   try {
     const p = getClient();
@@ -401,11 +401,16 @@ module.exports = async (req, res) => {
     ]);
 
   const derniereTs = enrichis[0] ? tsUtc(enrichis[0].date, enrichis[0].heure) : null;
-  const prochainPasse = await prochainPassageFige(redis, enrichis, derniereTs);
+  // Planning des passages observés (minutes depuis minuit UTC, triées) :
+  // descriptif, donc recalculé à chaque requête sans avoir besoin d'être figé
+  // comme la cible du prochain passage — plus l'historique s'accumule, plus
+  // il se précise.
+  const horaires = horairesPassages(enrichis);
+  const prochainPasse = await prochainPassageFige(redis, horaires, derniereTs);
 
   const sortie = {
     ok: true,
-    source: 'NASA FIRMS · VIIRS (SNPP, NOAA-20, NOAA-21) + MODIS',
+    source: 'NASA FIRMS · VIIRS (SNPP, NOAA-20, NOAA-21) + MODIS + Landsat',
     fenetre: joursObtenus === 1 ? 'dernières 24h' : `derniers ${joursObtenus} jours`,
     jours: joursObtenus,
     depuis: DEPART_FEU,
@@ -426,6 +431,11 @@ module.exports = async (req, res) => {
     // prochainPassageFige(). null si l'historique est trop court pour en
     // tirer une habitude fiable.
     prochainPasse,
+    // Horaires de passage observés sur la période (minutes depuis minuit
+    // UTC, triés) — un par groupe de détections récurrent, tous satellites
+    // confondus. C'est ce qui répond à « combien de fois par jour ça se
+    // met à jour ».
+    planningPassages: horaires || [],
     parJour: joursListe,
     grille: GRILLE,
     origine: ORIGINE,
