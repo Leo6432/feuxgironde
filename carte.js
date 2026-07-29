@@ -141,6 +141,30 @@
       bloc.removeAttribute('hidden');
     }
 
+    // Les autres feux de France (hors du rayon Saumos, dernières 24h) : de
+    // simples points, sans l'animation ni les prédictions propres à Saumos —
+    // juste un repérage, affiché en plus dès qu'on dézoome ou qu'on se
+    // déplace sur la carte.
+    function afficherAutres(autres) {
+      (autres || []).forEach(function (a) {
+        var lat = +a[0], lon = +a[1], frp = +a[2] || 0, ts = +a[3];
+        if (!isFinite(lat) || !isFinite(lon)) return;
+        L.circleMarker([lat, lon], {
+          radius: 5,
+          color: '#D8232E',
+          weight: 1,
+          fillColor: '#EE8A17',
+          fillOpacity: 0.85,
+        })
+          .bindPopup(
+            '<strong>' + (frp ? '≈ ' + Math.round(frp) + ' MW' : 'puissance inconnue') + '</strong><br>' +
+            (isFinite(ts) ? 'détecté ' + heureFr(ts) : '') +
+            '<br><span style="opacity:.75">Autre feu, hors du suivi détaillé de Saumos</span>'
+          )
+          .addTo(carte);
+      });
+    }
+
     fetch('/api/firms?jours=max')
       .then(function (r) { return r.json(); })
       .then(function (d) {
@@ -179,6 +203,7 @@
 
         afficherPassage(isFinite(d.prochainPasse) ? d.prochainPasse : null);
         afficherPlanning(d.planningPassages);
+        afficherAutres(d.autres);
 
         if (!cellules.length) {
           chiffres(0, 0, d.derniereDetection);

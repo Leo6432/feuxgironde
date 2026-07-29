@@ -1,4 +1,5 @@
-// Points chauds détectés par satellite autour de Saumos, via NASA FIRMS.
+// Points chauds détectés par satellite, via NASA FIRMS — le feu de Saumos en
+// détail (comme avant), et les autres feux de France en simple repérage.
 //
 // La "surface brûlée" communiquée par la préfecture est un cumul depuis le
 // départ du feu : la plupart de cette surface est déjà éteinte. FIRMS donne
@@ -11,20 +12,22 @@
 // d'environnement Vercel FIRMS_MAP_KEY, jamais dans le code.
 
 const { getClient } = require('../lib/redis');
+const { frontiereFrance, dansGeometrie } = require('../lib/france');
 
 const LAT = 44.98;   // Saumos, Gironde
 const LON = -1.02;
 
-// Boîte large pour la requête FIRMS, affinée ensuite par un rayon de 34 km
-// autour de Saumos. L'ancien rectangle serré (bord sud à 44,80°, soit 20 km)
-// excluait bien Bordeaux et le bassin d'Arcachon… mais coupait aussi le bas
-// du feu. Le rayon suit le front : au point du 28 juillet 22h30, la
-// préfecture annonce le feu actif à Lanton (31 km) et au Grand Crohot
-// (32 km) — d'où 34 km, qui les couvre en laissant Bordeaux (38 km) et
-// Arcachon (39 km) en dehors. Le camp de Souge jouxtant Mérignac est dans le
-// cercle : c'est du vrai feu, tant pis pour le risque urbain résiduel.
-const BBOX = '-1.45,44.60,-0.55,45.35';
+// Boîte de requête FIRMS : la France métropolitaine et la Corse (avec une
+// petite marge). Élargie depuis la boîte serrée autour de Saumos, pour
+// repérer aussi les autres feux du pays — voir plus bas, la carte détaillée
+// (animation, prochain passage, etc.) reste, elle, calculée uniquement sur
+// un rayon de 34 km autour de Saumos, exactement comme avant.
+const BBOX = '-5.3,41.2,9.7,51.3';
 const RAYON_KM = 34;
+
+// Pas de la grille utilisée à la fois pour l'agrégation détaillée autour de
+// Saumos et pour le repérage (dédoublonnage) des autres feux de France.
+const GRILLE = 0.0025;
 
 // FIRMS plafonne la profondeur d'historique à 10 jours en temps quasi réel.
 const JOURS_DEFAUT = 1;
@@ -307,8 +310,9 @@ module.exports = async (req, res) => {
   // Cache serveur : le cache CDN ne couvre qu'une région et repart de zéro à
   // chaque déploiement. Une fenêtre longue coûte cher côté FIRMS (deux
   // capteurs, plusieurs milliers de lignes), donc on la garde en Redis.
-  // v11 : le planning des passages est désormais détaillé par satellite.
-  const cleCache = 'firms:v11:' + jours;
+  // v12 : la boîte de requête couvre toute la France (plus seulement la
+  // Gironde) et la réponse inclut les autres feux du pays (voir "autres").
+  const cleCache = 'firms:v12:' + jours;
   let redis = null;
   try {
     const p = getClient();
@@ -324,6 +328,11 @@ module.exports = async (req, res) => {
   } catch (e) {
     redis = null;   // le cache est un confort, jamais une dépendance
   }
+
+  // Lancée en parallèle des requêtes FIRMS ci-dessous plutôt qu'après : le
+  // contour de la France (télécharger + parser) ne doit pas ajouter de
+  // latence en série à une réponse déjà composée de plusieurs appels réseau.
+  const frontierePromise = frontiereFrance(redis).catch(() => null);
 
   async function essayer(n, decouper) {
     const morceaux = decouper ? decoupes(n) : [{ jours: n, date: null }];
@@ -401,10 +410,10 @@ module.exports = async (req, res) => {
   // heures passaient le plafond. Une cellule porte sa première et sa dernière
   // détection : c'est tout ce qu'il faut pour rejouer l'incendie.
   //
-  // La grille (~275 m) est plus fine que l'empreinte VIIRS (~375 m) : d'un
-  // passage à l'autre, les centres des détections se décalent, et cette
-  // dispersion dessine des contours plus fins que le pixel du capteur.
-  const GRILLE = 0.0025;
+  // La grille (~275 m, définie plus haut) est plus fine que l'empreinte
+  // VIIRS (~375 m) : d'un passage à l'autre, les centres des détections se
+  // décalent, et cette dispersion dessine des contours plus fins que le
+  // pixel du capteur.
   const parCellule = {};
   enrichis.forEach((p) => {
     const la = Math.round(p.lat / GRILLE) * GRILLE;
@@ -442,16 +451,53 @@ module.exports = async (req, res) => {
   const horaires = horairesPassages(enrichis);
   const prochainPasse = await prochainPassageFige(redis, horaires, derniereTs);
 
+  // Les autres feux de France : simple repérage (pas d'animation détaillée,
+  // pas de prédiction de passage — ça reste propre à Saumos, voir plus
+  // haut). Uniquement les 24 dernières heures, pour ne montrer que ce qui
+  // couve encore, pas des semaines de brûlages agricoles.
+  const geometrieFrance = await frontierePromise;
+  const dansLaFrance = (p) => (geometrieFrance ? dansGeometrie(p.lon, p.lat, geometrieFrance) : true);
+  const FENETRE_AUTRES_MS = 24 * 3600000;
+  const maintenant = Date.now();
+  const autresBrutes = tentative.points.filter((p) => {
+    if (distanceKm(LAT, LON, p.lat, p.lon) <= RAYON_KM) return false;   // déjà couvert par Saumos
+    if (maintenant - tsUtc(p.date, p.heure) > FENETRE_AUTRES_MS) return false;
+    return dansLaFrance(p);
+  });
+  // Dédoublonnage par cellule : un même foyer est vu par plusieurs
+  // satellites au fil de la fenêtre, on ne garde que sa détection la plus
+  // récente et sa puissance la plus forte.
+  const parCelluleAutres = {};
+  autresBrutes.forEach((p) => {
+    const la = Math.round(p.lat / GRILLE) * GRILLE;
+    const lo = Math.round(p.lon / GRILLE) * GRILLE;
+    const k = la.toFixed(4) + '_' + lo.toFixed(4);
+    const t = tsUtc(p.date, p.heure);
+    let c = parCelluleAutres[k];
+    if (!c) c = parCelluleAutres[k] = { lat: +la.toFixed(4), lon: +lo.toFixed(4), t, frp: 0 };
+    if (t > c.t) c.t = t;
+    if (p.frp > c.frp) c.frp = Math.round(p.frp);
+  });
+  // Encodage compact [lat, lon, frp, ts epoch ms], comme les cellules
+  // Saumos mais sans t0/t1 : pas de rejeu temporel pour ces points-là.
+  const autres = Object.values(parCelluleAutres)
+    .sort((a, b) => b.t - a.t)
+    .slice(0, 3000)
+    .map((c) => [c.lat, c.lon, c.frp, c.t]);
+
   const sortie = {
     ok: true,
     source: 'NASA FIRMS · VIIRS (SNPP, NOAA-20, NOAA-21) + MODIS + Landsat',
     fenetre: joursObtenus === 1 ? 'dernières 24h' : `derniers ${joursObtenus} jours`,
     jours: joursObtenus,
     depuis: DEPART_FEU,
-    // Toute dégradation est annoncée : fenêtre réduite ou tranches manquantes.
+    // Toute dégradation est annoncée : fenêtre réduite, tranches manquantes,
+    // ou frontière France approximative (repli sur la boîte englobante si le
+    // contour précis n'a pas pu être téléchargé).
     avertissement: joursObtenus !== jours
       ? `historique réduit à ${joursObtenus === 1 ? '24 h' : joursObtenus + ' jours'} — FIRMS n'a pas répondu sur la période complète`
-      : (!tentative.complet ? 'historique partiel — une partie des requêtes FIRMS a échoué' : undefined),
+      : (!tentative.complet ? 'historique partiel — une partie des requêtes FIRMS a échoué'
+        : (!geometrieFrance ? 'contour précis de la France indisponible — les « autres feux » utilisent une simple boîte englobante, qui peut inclure des points proches des frontières' : undefined)),
     total: enrichis.length,
     frpMax: enrichis.length ? Math.max(...enrichis.map((p) => p.frp)) : 0,
     // Somme des puissances : c'est l'énergie dégagée par l'ensemble du front,
@@ -477,6 +523,11 @@ module.exports = async (req, res) => {
     grille: GRILLE,
     origine: ORIGINE,
     cellules,
+    // Autres feux de France, hors du rayon Saumos, dernières 24h : simple
+    // repérage [lat, lon, frp, ts epoch ms] — pas d'animation, pas de
+    // prédiction de passage, voir plus haut.
+    autres,
+    frontierePrecise: !!geometrieFrance,
   };
 
   // 20 min pour une réponse complète : sous le rythme des passages satellite,
