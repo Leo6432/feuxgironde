@@ -66,7 +66,7 @@
   }
 
   attendreLeaflet(40, function () {
-    var carte = L.map(conteneur, { scrollWheelZoom: false }).setView(SAUMOS, 11);
+    var carte = L.map(conteneur, { scrollWheelZoom: true }).setView(SAUMOS, 11);
 
     // Fond satellite : les teintes sable et rouge se lisent dessus comme sur
     // la carte FIRMS, là où un fond routier clair les noyait.
