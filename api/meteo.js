@@ -12,29 +12,10 @@
 const LAT = 44.98;   // Saumos, Gironde
 const LON = -1.02;
 
-// L'API de prévision ne dit pas de quel run viennent ses valeurs, mais
-// Open-Meteo publie des métadonnées par modèle avec l'heure d'initialisation
-// du dernier run assimilé. Plusieurs identifiants candidats par modèle, au
-// cas où l'un changerait de nom.
-const RUNS = {
-  arome: ['meteofrance_arome_france_hd', 'meteofrance_arome_france0025', 'meteofrance_arome_france'],
-  arpege: ['meteofrance_arpege_europe', 'meteofrance_arpege_world'],
-};
-
-async function heureRun(candidats) {
-  for (const modele of candidats) {
-    try {
-      const r = await fetch(`https://api.open-meteo.com/data/${modele}/static/meta.json`);
-      if (!r.ok) continue;
-      const m = await r.json();
-      let t = m && m.last_run_initialisation_time;
-      if (!Number.isFinite(t) || t <= 0) continue;
-      if (t < 1e12) t *= 1000;   // secondes epoch → millisecondes
-      return { init: t, modele };
-    } catch (e) { /* candidat suivant */ }
-  }
-  return null;
-}
+// L'heure de run (« AROME 06Z ») est affichée à la main sur la page : les
+// métadonnées Open-Meteo l'ont annoncée au moins une fois sans qu'elle
+// corresponde à ce que montrait Météociel — un chiffre faux, même précis en
+// apparence, est pire qu'un chiffre absent.
 
 const VARIABLES = [
   'temperature_2m',
@@ -135,13 +116,10 @@ module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
 
   // Météo-France d'abord, puis le repli longue échéance pour les journées
-  // que ni AROME ni ARPEGE ne couvrent. Les heures de run partent en même
-  // temps : elles ne conditionnent pas la réponse, juste son affichage.
-  const [mf, gl, runArome, runArpege, aromeDates] = await Promise.all([
+  // que ni AROME ni ARPEGE ne couvrent.
+  const [mf, gl, aromeDates] = await Promise.all([
     recuperer('meteofrance_seamless', 4).catch(() => null),
     recuperer('best_match', 7).catch(() => null),
-    heureRun(RUNS.arome),
-    heureRun(RUNS.arpege),
     joursArome(4).catch(() => new Set()),
   ]);
 
@@ -261,9 +239,6 @@ module.exports = async (req, res) => {
     ok: true,
     source: 'Open-Meteo · ' + modeles.join(' puis '),
     instabilite: capeDispo ? 'CAPE mesurée' : 'repli sur la pression de surface',
-    // Heures d'initialisation réelles des derniers runs assimilés (ms epoch),
-    // lues dans les métadonnées Open-Meteo — null si elles sont injoignables.
-    runs: { arome: runArome, arpege: runArpege },
     jours: sortie,
   });
 };

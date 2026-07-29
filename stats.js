@@ -226,30 +226,10 @@
         }
       });
 
-      // Blocs de run : l'heure réelle d'initialisation, lue dans les
-      // métadonnées Open-Meteo. Un run se nomme par son heure UTC ("09Z"),
-      // c'est la convention de tous les sites météo.
-      function poserRun(nom, run) {
-        var v = document.getElementById('fg-run-' + nom);
-        var s = document.getElementById('fg-run-' + nom + '-detail');
-        if (!v) return;
-        if (!run || !isFinite(run.init)) {
-          v.textContent = '—';
-          if (s) s.textContent = 'heure du run indisponible pour le moment';
-          return;
-        }
-        var q = new Date(run.init);
-        v.textContent = String(q.getUTCHours()).padStart(2, '0') + 'Z';
-        if (s) {
-          s.textContent = 'run du ' + q.toLocaleDateString('fr-FR', {
-            weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/Paris',
-          }) + ', initialisé à ' + q.toLocaleTimeString('fr-FR', {
-            hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris',
-          }).replace(':', 'h') + ' heure française';
-        }
-      }
-      poserRun('arome', d.runs && d.runs.arome);
-      poserRun('arpege', d.runs && d.runs.arpege);
+      // Le run AROME/ARPEGE affiché sous le tableau est saisi à la main :
+      // Open-Meteo l'a annoncé au moins une fois sans qu'il corresponde à ce
+      // que montrait Météociel (03Z contre 06Z réel) — plus fiable de le
+      // fixer soi-même que de le republier automatiquement.
 
       if (!maj) return;
       var marque = document.getElementById('fg-live');
