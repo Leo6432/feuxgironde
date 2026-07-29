@@ -68,28 +68,38 @@ async function dernierProduit(jeton) {
 module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
 
+  // Deux façons d'obtenir un jeton : soit un couple clé/secret (échangé
+  // contre un jeton à chaque appel), soit un jeton déjà en main (obtenu à la
+  // main via user.eumetsat.int/cas/login) — utile pour tester tout de suite,
+  // mais un jeton de session CAS expire en général vite (souvent moins d'une
+  // heure) : à ne pas considérer comme une solution durable tant qu'on n'a
+  // pas confirmé sa durée de vie réelle.
+  const jetonDirect = process.env.EUMETSAT_ACCESS_TOKEN;
   const cle = process.env.EUMETSAT_CONSUMER_KEY;
   const secret = process.env.EUMETSAT_CONSUMER_SECRET;
-  if (!cle || !secret) {
+
+  if (!jetonDirect && (!cle || !secret)) {
     res.status(200).json({
       ok: false,
       etape: 'configuration',
-      raison: 'identifiants EUMETSAT non configurés (EUMETSAT_CONSUMER_KEY / EUMETSAT_CONSUMER_SECRET)',
-      aFaire: 'Créer un compte gratuit sur https://api.eumetsat.int, générer un couple clé/secret (onglet « API key »), les ajouter comme variables d’environnement Vercel — jamais dans le code.',
+      raison: 'aucun accès EUMETSAT configuré (EUMETSAT_ACCESS_TOKEN, ou EUMETSAT_CONSUMER_KEY + EUMETSAT_CONSUMER_SECRET)',
+      aFaire: 'Créer un compte gratuit sur https://eoportal.eumetsat.int, puis obtenir un accès (clé/secret ou jeton), à ajouter comme variable d’environnement Vercel — jamais dans le code.',
     });
     return;
   }
 
-  let jeton;
-  try {
-    jeton = await obtenirJeton(cle, secret);
-  } catch (e) {
-    res.status(200).json({
-      ok: false,
-      etape: 'authentification',
-      raison: sansSecret(e.message, [cle, secret]),
-    });
-    return;
+  let jeton = jetonDirect;
+  if (!jeton) {
+    try {
+      jeton = await obtenirJeton(cle, secret);
+    } catch (e) {
+      res.status(200).json({
+        ok: false,
+        etape: 'authentification',
+        raison: sansSecret(e.message, [cle, secret]),
+      });
+      return;
+    }
   }
 
   try {
