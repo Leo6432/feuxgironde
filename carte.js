@@ -126,18 +126,17 @@
     }
 
     // Tableau des horaires de passage réellement observés (voir
-    // planningPassages, calculé côté API à partir des détections des
-    // derniers jours) — répond à « combien de fois par jour ça se met
-    // à jour », en heures françaises et UTC.
-    function afficherPlanning(minutes) {
+    // planningPassages, calculé côté API séparément pour chaque satellite à
+    // partir des détections des derniers jours) — répond à « combien de fois
+    // par jour ça se met à jour, et par quel satellite ».
+    function afficherPlanning(passages) {
       var bloc = document.getElementById('fg-planning');
       var corps = document.getElementById('fg-planning-corps');
-      if (!bloc || !corps || !minutes || !minutes.length) return;
+      if (!bloc || !corps || !passages || !passages.length) return;
       var minuit = Math.floor(Date.now() / (24 * HEURE)) * 24 * HEURE;
-      corps.innerHTML = minutes.map(function (m) {
-        var t = minuit + m * MINUTE;
-        var heureUtc = String(Math.floor(m / 60)).padStart(2, '0') + 'h' + String(m % 60).padStart(2, '0');
-        return '<tr><td>' + heureMinFr(t) + '</td><td>' + heureUtc + '</td></tr>';
+      corps.innerHTML = passages.map(function (p) {
+        var t = minuit + p.minute * MINUTE;
+        return '<tr><td>' + heureMinFr(t) + '</td><td>' + (p.satellite || '—') + '</td></tr>';
       }).join('');
       bloc.removeAttribute('hidden');
     }

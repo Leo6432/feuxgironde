@@ -132,10 +132,23 @@ async function recuperer(capteur, cle, jours, dateDebut) {
     date: l.acq_date,
     heure: (l.acq_time || '').padStart(4, '0').replace(/(\d{2})(\d{2})/, '$1h$2'),
     satellite: l.satellite,
+    // Le capteur interrogé (pas la lettre FIRMS brute) : c'est lui qui dit
+    // de façon fiable quel satellite a produit la détection, utilisé pour
+    // le planning des passages observés.
+    capteur,
     confiance: l.confidence,
     frp: parseFloat(l.frp) || 0,
   }));
 }
+
+// Noms lisibles des capteurs, pour l'affichage du planning des passages.
+const NOM_CAPTEUR = {
+  VIIRS_SNPP_NRT: 'VIIRS Suomi-NPP',
+  VIIRS_NOAA20_NRT: 'VIIRS NOAA-20',
+  VIIRS_NOAA21_NRT: 'VIIRS NOAA-21',
+  MODIS_NRT: 'MODIS (Terra/Aqua)',
+  LANDSAT_NRT: 'Landsat',
+};
 
 // Horodatage UTC d'une détection ("2026-07-28" + "19h12"). FIRMS publie ses
 // heures en UTC : on reste dans ce référentiel de bout en bout.
@@ -161,8 +174,11 @@ function tsUtc(date, heure) {
 const MINUTE = 60000;
 const JOUR_MS = 86400000;
 
-function horairesPassages(enrichis) {
-  const ts = enrichis.map((p) => tsUtc(p.date, p.heure)).sort((a, b) => a - b);
+// Horaires de passage d'UN SEUL capteur — chaque satellite a son propre
+// rythme, les mélanger avant de grouper aurait fondu deux passages proches
+// (un VIIRS et un MODIS à quelques minutes d'écart) en un seul créneau,
+// masquant qu'il s'agit bien de deux mises à jour distinctes.
+function horairesUnCapteur(ts) {
   const passes = [];
   let debut = null, dernier = null;
   ts.forEach((t) => {
@@ -173,7 +189,7 @@ function horairesPassages(enrichis) {
     dernier = t;
   });
   if (dernier !== null) passes.push((debut + dernier) / 2);
-  if (passes.length < 4) return null;   // trop peu pour une habitude fiable
+  if (passes.length < 2) return [];   // un seul passage vu : pas encore une habitude
 
   const minutes = passes.map((t) => {
     const d = new Date(t);
@@ -201,12 +217,30 @@ function horairesPassages(enrichis) {
   });
 }
 
+// Planning complet, tous capteurs listés séparément et triés par heure —
+// une entrée par satellite et par créneau qu'il fréquente vraiment.
+function horairesPassages(enrichis) {
+  const parCapteur = {};
+  enrichis.forEach((p) => {
+    const c = p.capteur || 'inconnu';
+    (parCapteur[c] = parCapteur[c] || []).push(tsUtc(p.date, p.heure));
+  });
+  const tout = [];
+  Object.keys(parCapteur).forEach((capteur) => {
+    const ts = parCapteur[capteur].sort((a, b) => a - b);
+    horairesUnCapteur(ts).forEach((minute) => tout.push({ minute, capteur }));
+  });
+  if (!tout.length) return null;
+  tout.sort((a, b) => a.minute - b.minute);
+  return tout;
+}
+
 function prochainCandidat(horaires, apartirDe) {
   const minuit = Math.floor(apartirDe / JOUR_MS) * JOUR_MS;
   let candidat = null;
-  horaires.forEach((m) => {
+  horaires.forEach((h) => {
     for (let j = 0; j < 2; j++) {
-      const t = minuit + j * JOUR_MS + m * MINUTE;
+      const t = minuit + j * JOUR_MS + h.minute * MINUTE;
       if (t > apartirDe + 5 * MINUTE && (candidat === null || t < candidat)) candidat = t;
     }
   });
@@ -273,8 +307,8 @@ module.exports = async (req, res) => {
   // Cache serveur : le cache CDN ne couvre qu'une région et repart de zéro à
   // chaque déploiement. Une fenêtre longue coûte cher côté FIRMS (deux
   // capteurs, plusieurs milliers de lignes), donc on la garde en Redis.
-  // v10 : ajout de LANDSAT_NRT et du planning des passages observés.
-  const cleCache = 'firms:v10:' + jours;
+  // v11 : le planning des passages est désormais détaillé par satellite.
+  const cleCache = 'firms:v11:' + jours;
   let redis = null;
   try {
     const p = getClient();
@@ -431,11 +465,14 @@ module.exports = async (req, res) => {
     // prochainPassageFige(). null si l'historique est trop court pour en
     // tirer une habitude fiable.
     prochainPasse,
-    // Horaires de passage observés sur la période (minutes depuis minuit
-    // UTC, triés) — un par groupe de détections récurrent, tous satellites
-    // confondus. C'est ce qui répond à « combien de fois par jour ça se
-    // met à jour ».
-    planningPassages: horaires || [],
+    // Planning des passages observés, un par satellite et par créneau qu'il
+    // fréquente vraiment (minute depuis minuit UTC + nom lisible du
+    // capteur). C'est ce qui répond à « combien de fois par jour ça se
+    // met à jour, et lequel ».
+    planningPassages: (horaires || []).map((h) => ({
+      minute: h.minute,
+      satellite: NOM_CAPTEUR[h.capteur] || h.capteur,
+    })),
     parJour: joursListe,
     grille: GRILLE,
     origine: ORIGINE,
