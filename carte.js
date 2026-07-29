@@ -164,7 +164,11 @@
         .filter(function (p) { return isFinite(p.lat) && isFinite(p.lon); });
       if (!pts.length) return;
 
-      var RAYON_DEG = 0.04;   // ≈ 4-5 km : lisible à l'échelle du pays.
+      // Beaucoup plus petit que la largeur de la marge (voir plus bas) :
+      // à l'échelle du pays, la résolution du canvas plafonne de toute
+      // façon (voir largeur/hauteur), donc réduire ce rayon donne des
+      // points nets plutôt que des taches, sans jamais disparaître.
+      var RAYON_DEG = 0.012;   // ≈ 1,3 km
       var latMin = Infinity, latMax = -Infinity, lonMin = Infinity, lonMax = -Infinity;
       pts.forEach(function (p) {
         if (p.lat < latMin) latMin = p.lat;
