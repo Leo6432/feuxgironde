@@ -16,10 +16,10 @@
 //   EUMETSAT_CONSUMER_KEY, EUMETSAT_CONSUMER_SECRET
 
 const TOKEN_URL = 'https://api.eumetsat.int/token';
-// Identifiant de collection du produit FRP-PIXEL (Meteosat) — motif de
-// nommage EUMETSAT habituel, à confirmer sur le portail une fois les
-// identifiants disponibles : peut nécessiter un ajustement.
-const COLLECTION_FRP = 'EO:EUM:DAT:MSG:FRP-PIXEL';
+// Identifiant réel du produit FRP (Fire Radiative Power), trouvé sur
+// data.eumetsat.int — EUMETSAT catalogue ce produit sous un identifiant
+// numérique, pas un nom descriptif comme espéré au départ.
+const COLLECTION_FRP = 'EO:EUM:DAT:0417';
 const RECHERCHE_URL = 'https://api.eumetsat.int/data/search-products/1.0.0/os';
 
 function sansSecret(message, valeurs) {
