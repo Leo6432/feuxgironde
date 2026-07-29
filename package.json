@@ -2,6 +2,8 @@
   "name": "feuxgironde",
   "private": true,
   "dependencies": {
-    "redis": "^4.7.0"
+    "redis": "^4.7.0",
+    "jszip": "^3.10.1",
+    "netcdfjs": "^4.0.0"
   }
 }
