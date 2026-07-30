@@ -22,11 +22,29 @@
   var HEURE = 3600000;
   var FENETRE_ACTIVE_H = 6;
 
-  var COULEUR_BRULE = '#E8DDB0';
+  // Bandes d'âge de la zone brûlée : plus une cellule s'est éteinte
+  // récemment, plus sa teinte reste dorée/soutenue ; plus c'est ancien, plus
+  // elle se délave vers un sable pâle. Ce sont les mêmes cellules qu'avant
+  // (une seule couleur plate), juste regroupées par ancienneté au lieu
+  // d'une seule teinte — l'effet d'anneaux visible sur les cartes de feu
+  // habituelles (chaque bande retrace une étape de la progression).
+  var BANDES_BRULE = [
+    { maxH: 24, couleur: '#D9B36A' },   // éteint il y a moins de 24h
+    { maxH: 72, couleur: '#E0C58C' },   // 1–3 jours
+    { maxH: 120, couleur: '#E8DDB0' },  // 3–5 jours (teinte d'origine)
+    { maxH: Infinity, couleur: '#EDE6C8' },   // plus de 5 jours
+  ];
   var COULEURS_ACTIF = ['#F0C441', '#EE8A17', '#D8232E'];   // < 10, 10–30, ≥ 30 MW
 
   function classeFrp(frp) {
     return frp >= 30 ? 2 : (frp >= 10 ? 1 : 0);
+  }
+
+  function classeAgeBrule(ageHeures) {
+    for (var i = 0; i < BANDES_BRULE.length; i++) {
+      if (ageHeures < BANDES_BRULE[i].maxH) return i;
+    }
+    return BANDES_BRULE.length - 1;
   }
 
   function echec(message) {
@@ -397,20 +415,19 @@
         function rendre(T) {
           var actifs = 0, frpMax = 0, frpActif = 0, derniere = 0;
           var parClasse = [[], [], []];
+          var parBandeBrule = BANDES_BRULE.map(function () { return []; });
 
           ctxBrule.clearRect(0, 0, largeur, hauteur);
           ctxActif.clearRect(0, 0, largeur, hauteur);
 
-          ctxBrule.fillStyle = COULEUR_BRULE;
-          ctxBrule.beginPath();
           cellules.forEach(function (c) {
             c.etat = T < c.t0 ? 'absent' : (T <= c.fin ? 'actif' : 'brule');
             if (c.etat === 'absent') return;
             var vu = Math.min(c.t1, T);
             if (vu > derniere) derniere = vu;
             if (c.etat === 'brule') {
-              ctxBrule.moveTo(c.px + rx, c.py);
-              ctxBrule.ellipse(c.px, c.py, rx, ry, 0, 0, TAU);
+              var ageHeures = (T - c.t1) / HEURE;
+              parBandeBrule[classeAgeBrule(ageHeures)].push(c);
             } else {
               actifs++;
               frpActif += c.frp;
@@ -418,7 +435,21 @@
               parClasse[c.classe].push(c);
             }
           });
-          ctxBrule.fill();
+
+          // Des plus anciennes aux plus récentes, pour que le pourtour
+          // fraîchement éteint (plus doré) se lise par-dessus l'intérieur
+          // déjà délavé aux éventuels chevauchements de bande.
+          for (var b = parBandeBrule.length - 1; b >= 0; b--) {
+            var liste = parBandeBrule[b];
+            if (!liste.length) continue;
+            ctxBrule.fillStyle = BANDES_BRULE[b].couleur;
+            ctxBrule.beginPath();
+            liste.forEach(function (c) {
+              ctxBrule.moveTo(c.px + rx, c.py);
+              ctxBrule.ellipse(c.px, c.py, rx, ry, 0, 0, TAU);
+            });
+            ctxBrule.fill();
+          }
 
           // Du plus faible au plus fort, pour que le rouge reste au-dessus.
           parClasse.forEach(function (liste, i) {
