@@ -287,13 +287,10 @@
     // vraiment l'état de chaque portion de terrain, pas un simple cumul.
 
     var calqueZones = null;
-    var calquesActifs = [];
     var cadrageFait = false;
 
     function viderCalques() {
       if (calqueZones) { carte.removeLayer(calqueZones); calqueZones = null; }
-      calquesActifs.forEach(function (c) { carte.removeLayer(c); });
-      calquesActifs = [];
     }
 
     function afficherZones(d) {
@@ -372,23 +369,20 @@
         : 'aucune détection dans les 8 h précédentes');
     }
 
-    function afficherFoyersActifs(actifs) {
-      var frpMax = 0, derniereTs = 0, frpActif = 0;
+    // Bilan des foyers actifs à la date choisie : nombre, puissance maximale
+    // et horodatage de la dernière détection, pour les compteurs sous la
+    // carte.
+    //
+    // Ces détections ne sont plus dessinées. Elles l'étaient sous forme de
+    // cercles colorés par puissance, mais elles faisaient doublon avec les
+    // pixels rouges — qui disent déjà ce qui est actif — et masquaient le
+    // détail de la grille à cette finesse.
+    function bilanFoyersActifs(actifs) {
+      var frpMax = 0, derniereTs = 0;
       (actifs || []).forEach(function (a) {
-        var lat = +a[0], lon = +a[1], frp = +a[2] || 0, ts = +a[3];
-        if (!isFinite(lat) || !isFinite(lon)) return;
+        var frp = +a[2] || 0, ts = +a[3];
         if (frp > frpMax) frpMax = frp;
-        frpActif += frp;
         if (ts > derniereTs) derniereTs = ts;
-        calquesActifs.push(L.circleMarker([lat, lon], {
-          radius: 4, weight: 1, color: '#7a2712',
-          fillColor: COULEURS_ACTIF[classeFrp(frp)], fillOpacity: 0.92,
-        })
-          .bindPopup(
-            '<strong>' + (frp ? '≈ ' + Math.round(frp) + ' MW' : 'puissance inconnue') + '</strong><br>' +
-            (isFinite(ts) ? 'détecté ' + heureFr(ts) : '')
-          )
-          .addTo(carte));
       });
       return { nb: (actifs || []).length, frpMax: frpMax, derniereTs: derniereTs };
     }
@@ -409,7 +403,7 @@
     function afficherEtat(d) {
       viderCalques();
       var zones = afficherZones(d);
-      var bilan = afficherFoyersActifs(d.actifs);
+      var bilan = bilanFoyersActifs(d.actifs);
       chiffres(bilan.nb, bilan.frpMax, bilan.derniereTs ? heureFr(bilan.derniereTs) : '—');
       majEtiquette(d, zones);
       if (blocTemps) blocTemps.removeAttribute('hidden');
