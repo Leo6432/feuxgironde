@@ -33,12 +33,18 @@ const JOURS_MAX = 10;
 const DEPART_FEU = '2026-07-22';
 const FENETRE_ACTIVE_H = 6;
 
-// Empreinte au sol du pixel, par instrument : combien de cellules de grille
-// une détection marque autour d'elle. Le pixel MODIS couvre ~1 km, celui de
-// VIIRS ~375 m — d'où un rayon d'empreinte plus large pour MODIS, qui relie
-// des détections que VIIRS seul laisserait isolées.
-const RAYON_CELLULES = { VIIRS: 1, MODIS: 2, LANDSAT: 1 };
-const RAYON_CELLULES_DEFAUT = 1;
+// Empreinte au sol du pixel, par instrument, en mètres — FOOTPRINT_RADIUS_M
+// chez eux. Exprimée en distance réelle et non en nombre de cellules : la
+// finesse de la grille peut ainsi changer sans déformer l'empreinte des
+// capteurs. Le pixel MODIS couvre ~1 km là où VIIRS est à ~375 m, et c'est
+// lui qui relie des détections que VIIRS seul laisserait isolées.
+const RAYON_M = { VIIRS: 300, MODIS: 750, LANDSAT: 300 };
+const RAYON_M_DEFAUT = 300;
+
+function rayonCellules(capteur) {
+  const m = RAYON_M[instrumentDe(capteur)] || RAYON_M_DEFAUT;
+  return Math.max(1, Math.round(m / PAS_M));
+}
 
 function instrumentDe(capteur) {
   if (capteur.indexOf('MODIS') === 0) return 'MODIS';
@@ -142,7 +148,7 @@ async function recuperer(capteur, cle, jours, dateDebut) {
 // longtemps (leur partition « last_activity_state »).
 function marquer(derniereActivite, point, origine, pas) {
   const { i, j } = celluleDe(point.lat, point.lon, origine, pas);
-  const r = RAYON_CELLULES[instrumentDe(point.capteur)] || RAYON_CELLULES_DEFAUT;
+  const r = rayonCellules(point.capteur);
   // Empreinte carrée, pas arrondie : le pixel d'un capteur est une tuile au
   // sol, et arrondir les coins d'une détection isolée lui donnerait l'allure
   // d'un rond — exactement ce qu'on cherche à éviter.
@@ -181,7 +187,7 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const cleCache = 'perimetre:v5';
+  const cleCache = 'perimetre:v6';
   let redis = null;
   try {
     const p = getClient();
