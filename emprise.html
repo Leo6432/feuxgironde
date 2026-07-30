@@ -17,11 +17,58 @@
 <style>
   html, body { margin: 0; padding: 0; height: 100%; }
   #map { position: fixed; inset: 0; width: 100vw; height: 100vh; background: #0b0f1a; }
+
+  .barre-temps {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(11, 15, 26, .82);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 999px;
+    font: 600 13px/1.2 -apple-system, "Segoe UI", Arial, sans-serif;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, .35);
+    width: min(92vw, 560px);
+  }
+  .barre-temps[hidden] { display: none; }
+  .barre-temps button {
+    flex: 0 0 auto;
+    border: none;
+    background: #d7191c;
+    color: #fff;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .barre-temps input[type="range"] {
+    flex: 1;
+    accent-color: #d7191c;
+    min-width: 0;
+  }
+  .barre-temps span {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
 </style>
 </head>
 <body>
 
 <div id="map"></div>
+
+<div class="barre-temps" id="barre" hidden>
+  <button type="button" id="lecture" aria-label="Lecture de la progression">▶</button>
+  <input type="range" id="curseur" min="0" max="0" step="1" value="0">
+  <span id="etiquette"></span>
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="/emprise.js" defer></script>
