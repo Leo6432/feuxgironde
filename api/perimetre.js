@@ -20,6 +20,7 @@
 // demande puis mis en cache, faute de pipeline programmé.
 
 const { getClient } = require('../lib/redis');
+const { pasEnDegres, celluleDe, cleCellule, contourDeCellules, PAS_M } = require('../lib/pixels');
 
 const LAT = 44.98;   // Saumos, Gironde
 const LON = -1.02;
@@ -31,23 +32,12 @@ const DEPART_FEU = '2026-07-22';
 const SNAPSHOT_HEURES = 6;      // SNAPSHOT_STEP_HOURS chez eux
 const FENETRE_ACTIVE_H = 6;
 
-// Empreinte circulaire prudente autour du centre du pixel, par instrument —
-// FOOTPRINT_RADIUS_M chez eux. L'écart compte : le pixel MODIS (~1 km au sol)
-// couvre bien plus large que le pixel VIIRS, et c'est lui qui relie des
-// détections que VIIRS seul laisserait isolées.
-const RAYON_KM_PAR_INSTRUMENT = { VIIRS: 0.3, MODIS: 0.75, LANDSAT: 0.3 };
-const RAYON_KM_DEFAUT = 0.3;
-
-// Fermeture morphologique (SMALL_GAP_CLOSING_M) : on dilate l'union puis on
-// la rétracte d'autant. Les interstices plus étroits que ce rayon se
-// referment, les contours extérieurs reviennent à leur place. Sans cette
-// étape, une grille de détections un peu creuse ressort en bandes séparées
-// au lieu d'une emprise pleine — c'était le défaut du rendu précédent.
-const FERMETURE_KM = 0.1;
-
-// Simplification purement graphique des frontières (BOUNDARY_SIMPLIFY_M,
-// 30 m chez eux) : ~0,00027° de latitude.
-const SIMPLIFICATION_DEG = 0.00027;
+// Empreinte au sol du pixel, par instrument : combien de cellules de grille
+// une détection marque autour d'elle. Le pixel MODIS couvre ~1 km, celui de
+// VIIRS ~375 m — d'où un rayon d'empreinte plus large pour MODIS, qui relie
+// des détections que VIIRS seul laisserait isolées.
+const RAYON_CELLULES = { VIIRS: 1, MODIS: 2, LANDSAT: 1 };
+const RAYON_CELLULES_DEFAUT = 1;
 
 function instrumentDe(capteur) {
   if (capteur.indexOf('MODIS') === 0) return 'MODIS';
@@ -56,10 +46,6 @@ function instrumentDe(capteur) {
 }
 
 const CAPTEURS = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT', 'MODIS_NRT', 'LANDSAT_NRT'];
-
-// Plafond de sécurité : au-delà, la grille de regroupement s'élargit plutôt
-// que de laisser la fusion de polygones s'emballer.
-const MAX_POINTS_UNION = 2500;
 
 function joursDepuisDepart() {
   const debut = new Date(DEPART_FEU + 'T00:00:00Z');
@@ -145,81 +131,24 @@ async function recuperer(capteur, cle, jours, dateDebut) {
   }));
 }
 
-// turf est distribué en modules ESM purs : un require() plante au chargement
-// sur l'environnement Node de Vercel (même mésaventure qu'avec netcdfjs).
-let turfPromise = null;
-function chargerTurf() {
-  if (!turfPromise) {
-    turfPromise = Promise.all([
-      import('@turf/helpers'),
-      import('@turf/buffer'),
-      import('@turf/union'),
-      import('@turf/simplify'),
-    ]).then(([helpers, buffer, union, simplify]) => ({
-      point: helpers.point,
-      featureCollection: helpers.featureCollection,
-      buffer: buffer.default,
-      union: union.default,
-      simplify: simplify.default,
-    }));
+// Marque les cellules de grille couvertes par une détection : la cellule du
+// point, plus son voisinage selon l'empreinte de l'instrument. C'est ce
+// marquage qui donne les bords en escalier — des pixels carrés, pas des
+// arrondis.
+function marquer(occupees, point, origine, pas) {
+  const { i, j } = celluleDe(point.lat, point.lon, origine, pas);
+  const r = RAYON_CELLULES[instrumentDe(point.capteur)] || RAYON_CELLULES_DEFAUT;
+  let ajoutees = 0;
+  for (let di = -r; di <= r; di++) {
+    for (let dj = -r; dj <= r; dj++) {
+      // Empreinte arrondie plutôt que carrée : au-delà du rayon, la cellule
+      // n'est pas couverte par le pixel du capteur.
+      if (di * di + dj * dj > r * r + r) continue;
+      const k = cleCellule(i + di, j + dj);
+      if (!occupees.has(k)) { occupees.add(k); ajoutees++; }
+    }
   }
-  return turfPromise;
-}
-
-// Frontières d'un polygone/multipolygone → LineString ou MultiLineString.
-// C'est ce que leur pipeline exporte : des lignes, pas des surfaces pleines,
-// pour que les étapes successives se superposent en anneaux lisibles.
-function contourEnLignes(geometrie) {
-  const polygones = geometrie.type === 'Polygon'
-    ? [geometrie.coordinates]
-    : geometrie.coordinates;
-  const lignes = [];
-  polygones.forEach((anneaux) => {
-    (anneaux || []).forEach((anneau) => {
-      if (Array.isArray(anneau) && anneau.length >= 2) lignes.push(anneau);
-    });
-  });
-  if (!lignes.length) return null;
-  if (lignes.length === 1) return { type: 'LineString', coordinates: lignes[0] };
-  return { type: 'MultiLineString', coordinates: lignes };
-}
-
-function arrondirLignes(geometrie, decimales) {
-  const f = Math.pow(10, decimales);
-  const arr = (c) => [Math.round(c[0] * f) / f, Math.round(c[1] * f) / f];
-  if (geometrie.type === 'LineString') {
-    return { type: 'LineString', coordinates: geometrie.coordinates.map(arr) };
-  }
-  return {
-    type: 'MultiLineString',
-    coordinates: geometrie.coordinates.map((l) => l.map(arr)),
-  };
-}
-
-// Regroupement sur grille : dédoublonne les détections répétées d'un même
-// foyer par plusieurs passages, et borne le coût de la fusion. Une cellule
-// vue à la fois par VIIRS et MODIS garde le plus grand rayon des deux : le
-// pixel MODIS couvre réellement cette surface.
-function cellulesDe(points, grille) {
-  const vues = new Map();
-  points.forEach((p) => {
-    const la = Math.round(p.lat / grille) * grille;
-    const lo = Math.round(p.lon / grille) * grille;
-    const k = la.toFixed(4) + '_' + lo.toFixed(4);
-    const rayon = RAYON_KM_PAR_INSTRUMENT[instrumentDe(p.capteur)] || RAYON_KM_DEFAUT;
-    const dejaVue = vues.get(k);
-    if (!dejaVue) vues.set(k, { c: [+lo.toFixed(4), +la.toFixed(4)], r: rayon, k });
-    else if (rayon > dejaVue.r) dejaVue.r = rayon;
-  });
-  return [...vues.values()];
-}
-
-function grilleAdaptee(points) {
-  let grille = 0.0025;
-  while (cellulesDe(points, grille).length > MAX_POINTS_UNION && grille < 0.02) {
-    grille *= 1.5;
-  }
-  return grille;
+  return ajoutees;
 }
 
 module.exports = async (req, res) => {
@@ -292,63 +221,39 @@ module.exports = async (req, res) => {
     if (t >= maintenant) break;
   }
 
-  const grille = grilleAdaptee(tous);
+  // Repère de la grille de pixels : origine calée sur un multiple du pas,
+  // pour que les cellules tombent toujours au même endroit d'un calcul au
+  // suivant (sinon le contour glisserait à chaque rafraîchissement).
+  const pasGrille = pasEnDegres(LAT);
+  const origine = {
+    lat: Math.floor(LAT / pasGrille.dLat) * pasGrille.dLat,
+    lon: Math.floor(LON / pasGrille.dLon) * pasGrille.dLon,
+  };
 
   let etapes = [];
   try {
-    const turf = await chargerTurf();
-    let cumul = null;          // union cumulative brute, accumulée d'un cliché au suivant
-    let contourPret = null;    // même union, fermée et simplifiée pour publication
-    let aChange = false;       // le cumul a-t-il bougé depuis la dernière fermeture ?
-    let dejaVues = new Set();  // cellules déjà intégrées au cumul
+    const occupees = new Set();   // cellules cumulées, croissant d'un cliché au suivant
     let iPoint = 0;
     let index = 0;
+    let aChange = false;
+    let contourPret = null;
 
     for (const borne of bornes) {
-      // Points nouvellement arrivés dans cette tranche.
-      const nouveaux = [];
       while (iPoint < tous.length && tous[iPoint].ts <= borne) {
-        nouveaux.push(tous[iPoint]);
+        if (marquer(occupees, tous[iPoint], origine, pasGrille)) aChange = true;
         iPoint++;
       }
 
-      // Seules les cellules encore inconnues coûtent une fusion : c'est ce
-      // qui rend l'accumulation abordable à la demande (sinon il faudrait
-      // refondre l'intégralité des cercles à chaque cliché).
-      const aAjouter = cellulesDe(nouveaux, grille)
-        .filter((c) => {
-          if (dejaVues.has(c.k)) return false;
-          dejaVues.add(c.k);
-          return true;
-        });
+      if (!occupees.size) continue;   // rien encore détecté à ce stade
 
-      if (aAjouter.length) {
-        const cercles = aAjouter.map((c) =>
-          turf.buffer(turf.point(c.c), c.r, { units: 'kilometers', steps: 8 })
-        );
-        const lot = cercles.length === 1
-          ? cercles[0]
-          : turf.union(turf.featureCollection(cercles));
-        cumul = cumul ? turf.union(turf.featureCollection([cumul, lot])) : lot;
-        aChange = true;
-      }
-
-      if (!cumul) continue;   // rien encore détecté à ce stade
-
-      // La fermeture ne s'applique qu'à la géométrie publiée, pas au cumul
-      // conservé : la rétracter puis la redilater d'un cliché au suivant
-      // ferait dériver le contour à chaque étape.
+      // Le contour ne se recalcule que si de nouvelles cellules sont
+      // apparues : deux clichés consécutifs sans détection partagent le même
+      // tracé, inutile de le refaire.
       if (aChange || !contourPret) {
-        let ferme = turf.buffer(cumul, FERMETURE_KM, { units: 'kilometers' });
-        ferme = turf.buffer(ferme, -FERMETURE_KM, { units: 'kilometers' });
-        contourPret = turf.simplify(ferme || cumul, {
-          tolerance: SIMPLIFICATION_DEG, highQuality: false,
-        });
+        contourPret = contourDeCellules(occupees, origine, pasGrille, 5);
         aChange = false;
       }
-
-      const lignes = contourEnLignes(contourPret.geometry);
-      if (!lignes) continue;
+      if (!contourPret) continue;
 
       index += 1;
       const sourcesVues = new Set(tous.slice(0, iPoint).map((p) => p.capteur));
@@ -359,13 +264,13 @@ module.exports = async (req, res) => {
         observed_until_utc: new Date(tous[Math.max(0, iPoint - 1)].ts).toISOString(),
         borne,
         detections_cumulees: iPoint,
-        cellules_cumulees: dejaVues.size,
+        cellules_cumulees: occupees.size,
         sources: [...sourcesVues].sort().join(', '),
-        contour: arrondirLignes(lignes, 5),
+        contour: contourPret,
       });
     }
   } catch (e) {
-    res.status(200).json({ ok: false, raison: 'fusion des contours échouée : ' + e.message });
+    res.status(200).json({ ok: false, raison: 'calcul des contours échoué : ' + e.message });
     return;
   }
 
@@ -382,7 +287,7 @@ module.exports = async (req, res) => {
     produit: 'cumulative_active_fire_detection_extent',
     depuis: DEPART_FEU,
     pasHeures: SNAPSHOT_HEURES,
-    grille,
+    pasGrilleM: PAS_M,
     detections: tous.length,
     etapes,
     actifs,

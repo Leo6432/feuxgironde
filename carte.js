@@ -291,38 +291,6 @@
       return interpolerRvb([255, 126, 43], [215, 25, 28], (progres - 0.55) / 0.45);
     }
 
-    // Lissage de Chaikin : purement visuel, il arrondit l'escalier laissé par
-    // la grille de détection sans déplacer la limite calculée de plus d'un
-    // quart de segment.
-    function ligneEstFermee(c) {
-      if (!c || c.length < 4) return false;
-      var p = c[0], d = c[c.length - 1];
-      return Math.abs(p[0] - d[0]) < 1e-8 && Math.abs(p[1] - d[1]) < 1e-8;
-    }
-
-    function lisser(coords) {
-      if (!Array.isArray(coords) || coords.length < 4) return coords;
-      var fermee = ligneEstFermee(coords);
-      var pts = fermee ? coords.slice(0, -1) : coords;
-      var out = [];
-      if (!fermee) out.push(pts[0]);
-      for (var i = 0; i < pts.length - (fermee ? 0 : 1); i++) {
-        var a = pts[i], b = pts[(i + 1) % pts.length];
-        out.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25]);
-        out.push([a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
-      }
-      if (fermee) out.push(out[0]);
-      else out.push(pts[pts.length - 1]);
-      return out;
-    }
-
-    function lisserGeometrie(g) {
-      if (g.type === 'LineString') {
-        return { type: 'LineString', coordinates: lisser(g.coordinates) };
-      }
-      return { type: 'MultiLineString', coordinates: g.coordinates.map(lisser) };
-    }
-
     // Les lignes fermées d'une étape délimitent aussi une surface : on la
     // remplit discrètement pour la dernière étape seulement, afin que
     // l'emprise actuelle se lise d'un coup d'œil sans noyer les anneaux.
@@ -355,7 +323,7 @@
           var progres = maxIndex > 1 ? (e.snapshot_index - 1) / (maxIndex - 1) : 1;
           return {
             type: 'Feature',
-            geometry: lisserGeometrie(e.contour),
+            geometry: e.contour,
             properties: {
               progres: progres,
               dernier: e.snapshot_index === maxIndex,
@@ -366,7 +334,10 @@
           };
         }),
       }, {
-        smoothFactor: 1.7,
+        // smoothFactor 0 : Leaflet ne simplifie pas le tracé au rendu. Les bords
+        // en escalier de la grille sont le résultat voulu — les arrondir
+        // reviendrait à effacer les pixels.
+        smoothFactor: 0,
         style: function (f) {
           var p = f.properties;
           return {
