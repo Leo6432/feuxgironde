@@ -31,10 +31,29 @@ const DEPART_FEU = '2026-07-22';
 const SNAPSHOT_HEURES = 6;      // SNAPSHOT_STEP_HOURS chez eux
 const FENETRE_ACTIVE_H = 6;
 
-// Empreinte circulaire prudente autour du centre du pixel — eux distinguent
-// VIIRS (300 m) et MODIS (750 m) ; on prend une valeur intermédiaire unique,
-// l'agrégation par grille ne conservant pas le capteur d'origine.
-const RAYON_CERCLE_KM = 0.32;
+// Empreinte circulaire prudente autour du centre du pixel, par instrument —
+// FOOTPRINT_RADIUS_M chez eux. L'écart compte : le pixel MODIS (~1 km au sol)
+// couvre bien plus large que le pixel VIIRS, et c'est lui qui relie des
+// détections que VIIRS seul laisserait isolées.
+const RAYON_KM_PAR_INSTRUMENT = { VIIRS: 0.3, MODIS: 0.75, LANDSAT: 0.3 };
+const RAYON_KM_DEFAUT = 0.3;
+
+// Fermeture morphologique (SMALL_GAP_CLOSING_M) : on dilate l'union puis on
+// la rétracte d'autant. Les interstices plus étroits que ce rayon se
+// referment, les contours extérieurs reviennent à leur place. Sans cette
+// étape, une grille de détections un peu creuse ressort en bandes séparées
+// au lieu d'une emprise pleine — c'était le défaut du rendu précédent.
+const FERMETURE_KM = 0.1;
+
+// Simplification purement graphique des frontières (BOUNDARY_SIMPLIFY_M,
+// 30 m chez eux) : ~0,00027° de latitude.
+const SIMPLIFICATION_DEG = 0.00027;
+
+function instrumentDe(capteur) {
+  if (capteur.indexOf('MODIS') === 0) return 'MODIS';
+  if (capteur.indexOf('LANDSAT') === 0) return 'LANDSAT';
+  return 'VIIRS';
+}
 
 const CAPTEURS = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT', 'MODIS_NRT', 'LANDSAT_NRT'];
 
@@ -178,13 +197,19 @@ function arrondirLignes(geometrie, decimales) {
 }
 
 // Regroupement sur grille : dédoublonne les détections répétées d'un même
-// foyer par plusieurs passages, et borne le coût de la fusion.
+// foyer par plusieurs passages, et borne le coût de la fusion. Une cellule
+// vue à la fois par VIIRS et MODIS garde le plus grand rayon des deux : le
+// pixel MODIS couvre réellement cette surface.
 function cellulesDe(points, grille) {
   const vues = new Map();
   points.forEach((p) => {
     const la = Math.round(p.lat / grille) * grille;
     const lo = Math.round(p.lon / grille) * grille;
-    vues.set(la.toFixed(4) + '_' + lo.toFixed(4), [+lo.toFixed(4), +la.toFixed(4)]);
+    const k = la.toFixed(4) + '_' + lo.toFixed(4);
+    const rayon = RAYON_KM_PAR_INSTRUMENT[instrumentDe(p.capteur)] || RAYON_KM_DEFAUT;
+    const dejaVue = vues.get(k);
+    if (!dejaVue) vues.set(k, { c: [+lo.toFixed(4), +la.toFixed(4)], r: rayon, k });
+    else if (rayon > dejaVue.r) dejaVue.r = rayon;
   });
   return [...vues.values()];
 }
@@ -272,7 +297,9 @@ module.exports = async (req, res) => {
   let etapes = [];
   try {
     const turf = await chargerTurf();
-    let cumul = null;          // union cumulative, accumulée d'un cliché au suivant
+    let cumul = null;          // union cumulative brute, accumulée d'un cliché au suivant
+    let contourPret = null;    // même union, fermée et simplifiée pour publication
+    let aChange = false;       // le cumul a-t-il bougé depuis la dernière fermeture ?
     let dejaVues = new Set();  // cellules déjà intégrées au cumul
     let iPoint = 0;
     let index = 0;
@@ -290,26 +317,37 @@ module.exports = async (req, res) => {
       // refondre l'intégralité des cercles à chaque cliché).
       const aAjouter = cellulesDe(nouveaux, grille)
         .filter((c) => {
-          const k = c[1].toFixed(4) + '_' + c[0].toFixed(4);
-          if (dejaVues.has(k)) return false;
-          dejaVues.add(k);
+          if (dejaVues.has(c.k)) return false;
+          dejaVues.add(c.k);
           return true;
         });
 
       if (aAjouter.length) {
         const cercles = aAjouter.map((c) =>
-          turf.buffer(turf.point(c), RAYON_CERCLE_KM, { units: 'kilometers', steps: 4 })
+          turf.buffer(turf.point(c.c), c.r, { units: 'kilometers', steps: 8 })
         );
         const lot = cercles.length === 1
           ? cercles[0]
           : turf.union(turf.featureCollection(cercles));
         cumul = cumul ? turf.union(turf.featureCollection([cumul, lot])) : lot;
-        cumul = turf.simplify(cumul, { tolerance: 0.0002, highQuality: false });
+        aChange = true;
       }
 
       if (!cumul) continue;   // rien encore détecté à ce stade
 
-      const lignes = contourEnLignes(cumul.geometry);
+      // La fermeture ne s'applique qu'à la géométrie publiée, pas au cumul
+      // conservé : la rétracter puis la redilater d'un cliché au suivant
+      // ferait dériver le contour à chaque étape.
+      if (aChange || !contourPret) {
+        let ferme = turf.buffer(cumul, FERMETURE_KM, { units: 'kilometers' });
+        ferme = turf.buffer(ferme, -FERMETURE_KM, { units: 'kilometers' });
+        contourPret = turf.simplify(ferme || cumul, {
+          tolerance: SIMPLIFICATION_DEG, highQuality: false,
+        });
+        aChange = false;
+      }
+
+      const lignes = contourEnLignes(contourPret.geometry);
       if (!lignes) continue;
 
       index += 1;
