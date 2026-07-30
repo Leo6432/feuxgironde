@@ -2,8 +2,12 @@
   "name": "feuxgironde",
   "private": true,
   "dependencies": {
-    "redis": "^4.7.0",
+    "@turf/buffer": "^7.3.5",
+    "@turf/helpers": "^7.3.5",
+    "@turf/simplify": "^7.3.5",
+    "@turf/union": "^7.3.5",
     "jszip": "^3.10.1",
-    "netcdfjs": "^4.0.0"
+    "netcdfjs": "^4.0.0",
+    "redis": "^4.7.0"
   }
 }

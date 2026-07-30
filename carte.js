@@ -95,6 +95,22 @@
 
     L.marker(SAUMOS).addTo(carte).bindPopup('<strong>Saumos</strong><br>Départ du feu, 22 juillet');
 
+    // Contour net de l'emprise cumulée du feu (voir /api/perimetre) : chaque
+    // détection FIRMS transformée en petit cercle, tous fusionnés en une
+    // vraie forme géométrique — un vrai polygone Leaflet, pas des disques
+    // flous. Toujours l'état ACTUEL cumulé, indépendant du curseur temporel
+    // ci-dessous (qui, lui, rejoue heure par heure les foyers actifs).
+    fetch('/api/perimetre')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok || !d.contour) return;
+        L.geoJSON(d.contour, {
+          style: { color: '#B89E3F', weight: 1.5, fillColor: '#E8DDB0', fillOpacity: 0.55 },
+          interactive: false,
+        }).addTo(carte);
+      })
+      .catch(function () { /* couche facultative : la carte reste utilisable sans */ });
+
     // Les polices web arrivent après le premier rendu et font glisser la mise
     // en page : Leaflet garde alors la position qu'avait le conteneur au
     // moment de l'initialisation. invalidateSize le recale.
