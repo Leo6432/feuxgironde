@@ -64,11 +64,11 @@
 
     <div class="time-bar" id="fg-time" hidden>
       <div class="time-head">
-        <label for="fg-time-range">Remonter dans le temps — un cran par heure</label>
-        <output id="fg-time-label" for="fg-time-range"></output>
+        <label for="fg-time-select">Cliché du contour — par tranche de 6 heures</label>
+        <output id="fg-time-label" for="fg-time-select"></output>
       </div>
-      <input type="range" id="fg-time-range" min="0" max="0" step="1" value="0">
-      <div class="time-ends"><span id="fg-time-min"></span><span id="fg-time-max"></span></div>
+      <select id="fg-time-select"></select>
+      <p class="p-note" style="margin-top:6px">Le contour est recalculé pour chaque tranche (union des détections cumulées jusqu'à cet instant), comme une carte figée — pas une animation continue.</p>
     </div>
 
     <div class="map-legend">

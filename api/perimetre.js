@@ -1,15 +1,19 @@
-// EXPÉRIMENTAL — périmètre du feu de Saumos en contour net, plutôt qu'en
-// disques flous : même principe que le pipeline (Python, hors ligne) du
-// site nicolaslecorvec.github.io/fumees-nouvelle_aquitaine — transformer
-// chaque détection FIRMS en petit cercle réaliste (rayon proche du pixel du
+// Contour net du feu de Saumos, par cliché figé — même principe que le
+// pipeline (Python, hors ligne) du site
+// nicolaslecorvec.github.io/fumees-nouvelle_aquitaine : transformer chaque
+// détection FIRMS en petit cercle réaliste (rayon proche du pixel du
 // capteur), puis fusionner tous ces cercles en une vraie forme géométrique
 // (union de polygones), au lieu de peindre des points flous sur un canvas.
 //
 // Différence assumée avec ce site : ici, le calcul se fait à la demande
 // (fonction serverless), pas dans un pipeline Python programmé à l'avance —
-// donc mis en cache pour rester léger, et limité à l'état ACTUEL cumulé du
-// feu (pas encore de clichés historiques par tranche de temps, qui
-// demanderaient de refaire cette fusion pour chaque tranche).
+// donc mis en cache par tranche de 6h (comme leur SNAPSHOT_STEP_HOURS), avec
+// un cache long pour les tranches déjà passées (elles ne changent plus) et
+// court pour la tranche en cours (encore susceptible de nouvelles
+// détections).
+//
+// ?instant=<epoch ms> : borne haute du cliché (cumul de tout ce qui a été
+// détecté jusqu'à cet instant). Sans paramètre : dernière tranche connue.
 
 const { getClient } = require('../lib/redis');
 
@@ -20,11 +24,28 @@ const RAYON_KM = 34;
 
 const JOURS_MAX = 10;
 const DEPART_FEU = '2026-07-22';
+const SNAPSHOT_HEURES = 6;
+const FENETRE_ACTIVE_H = 6;   // même fenêtre que carte.js, pour les foyers "encore actifs"
 
 function joursDepuisDepart() {
   const debut = new Date(DEPART_FEU + 'T00:00:00Z');
   const ecoules = Math.ceil((Date.now() - debut.getTime()) / 86400000) + 1;
   return Math.min(JOURS_MAX, Math.max(1, ecoules));
+}
+
+// Liste des instants de cliché (toutes les 6h depuis le départ du feu,
+// jusqu'à maintenant inclus) — sert à la fois à borner les requêtes et à
+// fournir au client de quoi construire son sélecteur, sans dupliquer cette
+// logique côté navigateur.
+function snapshots() {
+  const HEURE = 3600000;
+  const debut = new Date(DEPART_FEU + 'T00:00:00Z').getTime();
+  const pas = SNAPSHOT_HEURES * HEURE;
+  const maintenant = Date.now();
+  const liste = [];
+  for (let t = debut + pas; t <= maintenant; t += pas) liste.push(t);
+  if (!liste.length || liste[liste.length - 1] < maintenant - 5 * 60000) liste.push(maintenant);
+  return liste;
 }
 
 const CAPTEURS = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT', 'MODIS_NRT', 'LANDSAT_NRT'];
@@ -42,6 +63,14 @@ function distanceKm(lat1, lon1, lat2, lon2) {
   const a = Math.sin(dLat / 2) ** 2 +
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function tsUtc(date, heure) {
+  const hm = String(heure || '0h0').split('h');
+  return Date.UTC(
+    +date.slice(0, 4), +date.slice(5, 7) - 1, +date.slice(8, 10),
+    +hm[0] || 0, +hm[1] || 0
+  );
 }
 
 function parseCsv(texte) {
@@ -100,6 +129,7 @@ async function recuperer(capteur, cle, jours, dateDebut) {
     lat: parseFloat(l.latitude),
     lon: parseFloat(l.longitude),
     frp: parseFloat(l.frp) || 0,
+    ts: tsUtc(l.acq_date, (l.acq_time || '').padStart(4, '0').replace(/(\d{2})(\d{2})/, '$1h$2')),
   }));
 }
 
@@ -131,8 +161,35 @@ function chargerTurf() {
 // calcul de plusieurs dizaines de secondes.
 const MAX_POINTS_UNION = 2500;
 
+function fusionner(points, turf) {
+  function regrouper(grille) {
+    const cellules = new Map();
+    points.forEach((p) => {
+      const la = Math.round(p.lat / grille) * grille;
+      const lo = Math.round(p.lon / grille) * grille;
+      cellules.set(la.toFixed(4) + '_' + lo.toFixed(4), { lat: +la.toFixed(4), lon: +lo.toFixed(4) });
+    });
+    return [...cellules.values()];
+  }
+
+  let grille = 0.0025;
+  let cellules = regrouper(grille);
+  while (cellules.length > MAX_POINTS_UNION && grille < 0.02) {
+    grille *= 1.5;
+    cellules = regrouper(grille);
+  }
+  if (cellules.length > MAX_POINTS_UNION) cellules = cellules.slice(0, MAX_POINTS_UNION);
+
+  const cercles = cellules.map((c) =>
+    turf.buffer(turf.point([c.lon, c.lat]), RAYON_CERCLE_KM, { units: 'kilometers', steps: 6 })
+  );
+  const fusion = turf.union(turf.featureCollection(cercles));
+  const simplifie = turf.simplify(fusion, { tolerance: 0.0003, highQuality: false });
+  return { geometrie: simplifie.geometry, cellules: cellules.length, grille };
+}
+
 module.exports = async (req, res) => {
-  res.setHeader('Cache-Control', 's-maxage=1200, stale-while-revalidate=3600');
+  res.setHeader('Cache-Control', 'no-store');   // le cache se gère nous-mêmes, par tranche
 
   const cle = process.env.FIRMS_MAP_KEY;
   if (!cle) {
@@ -140,7 +197,23 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const cleCache = 'perimetre:v1';
+  const listeSnapshots = snapshots();
+  const maintenant = Date.now();
+
+  let instant = maintenant;
+  try {
+    const url = new URL(req.url, 'http://x');
+    const brut = Number(url.searchParams.get('instant'));
+    if (isFinite(brut) && brut > 0) instant = brut;
+  } catch (e) { /* instant reste "maintenant" */ }
+
+  // Cliché déjà entièrement passé (marge de sécurité : au-delà de la fenêtre
+  // active, plus aucune nouvelle détection ne peut le faire bouger) : cache
+  // longtemps. Le cliché le plus récent reste encore susceptible de
+  // recevoir nos détections au fil des passages satellite : cache court.
+  const estFige = instant < maintenant - (FENETRE_ACTIVE_H + 2) * 3600000;
+  const cleCache = 'perimetre:v3:' + instant;
+
   let redis = null;
   try {
     const p = getClient();
@@ -174,62 +247,51 @@ module.exports = async (req, res) => {
       ok: false,
       raison: 'API FIRMS injoignable',
       details: resultats.map((r) => r.err),
+      snapshots: listeSnapshots,
     });
     return;
   }
 
-  const points = ok.flatMap((r) => r.pts)
+  const tousLesPoints = ok.flatMap((r) => r.pts)
     .filter((p) => distanceKm(LAT, LON, p.lat, p.lon) <= RAYON_KM);
 
+  // Cumul : tout ce qui a été détecté jusqu'à l'instant du cliché.
+  const points = tousLesPoints.filter((p) => p.ts <= instant);
+  // Encore "actif" à cet instant : détecté dans les FENETRE_ACTIVE_H
+  // dernières heures avant le cliché — rendu à part (petits points colorés
+  // par puissance), pas fondu dans le contour cumulé.
+  const actifs = points
+    .filter((p) => instant - p.ts <= FENETRE_ACTIVE_H * 3600000)
+    .map((p) => [p.lat, p.lon, Math.round(p.frp), p.ts]);
+
   if (!points.length) {
-    res.status(200).json({ ok: true, contour: null, points: 0 });
+    const vide = { ok: true, contour: null, points: 0, actifs: [], instant, snapshots: listeSnapshots };
+    res.status(200).json(vide);
     return;
   }
-
-  // Regroupe sur une grille pour dédoublonner les détections répétées d'une
-  // même zone (plusieurs passages successifs sur le même foyer) — la grille
-  // s'élargit d'elle-même si le nombre de points dépasse le plafond de
-  // sécurité, plutôt que de tenter la fusion telle quelle.
-  function regrouper(grille) {
-    const cellules = new Map();
-    points.forEach((p) => {
-      const la = Math.round(p.lat / grille) * grille;
-      const lo = Math.round(p.lon / grille) * grille;
-      cellules.set(la.toFixed(4) + '_' + lo.toFixed(4), { lat: +la.toFixed(4), lon: +lo.toFixed(4) });
-    });
-    return [...cellules.values()];
-  }
-
-  let grille = 0.0025;
-  let cellules = regrouper(grille);
-  while (cellules.length > MAX_POINTS_UNION && grille < 0.02) {
-    grille *= 1.5;
-    cellules = regrouper(grille);
-  }
-  if (cellules.length > MAX_POINTS_UNION) cellules = cellules.slice(0, MAX_POINTS_UNION);
 
   let sortie;
   try {
     const turf = await chargerTurf();
-    const cercles = cellules.map((c) =>
-      turf.buffer(turf.point([c.lon, c.lat]), RAYON_CERCLE_KM, { units: 'kilometers', steps: 6 })
-    );
-    const fusion = turf.union(turf.featureCollection(cercles));
-    const simplifie = turf.simplify(fusion, { tolerance: 0.0003, highQuality: false });
+    const { geometrie, cellules, grille } = fusionner(points, turf);
     sortie = {
       ok: true,
       points: points.length,
-      cellules: cellules.length,
+      cellules,
       grille,
-      contour: simplifie.geometry,
+      contour: geometrie,
+      actifs,
+      instant,
+      snapshots: listeSnapshots,
     };
   } catch (e) {
-    res.status(200).json({ ok: false, raison: 'fusion des contours échouée : ' + e.message });
+    res.status(200).json({ ok: false, raison: 'fusion des contours échouée : ' + e.message, snapshots: listeSnapshots });
     return;
   }
 
   if (redis) {
-    try { await redis.set(cleCache, JSON.stringify(sortie), { EX: 1200 }); } catch (e) { /* tant pis */ }
+    const duree = estFige ? 30 * 86400 : 1200;
+    try { await redis.set(cleCache, JSON.stringify(sortie), { EX: duree }); } catch (e) { /* tant pis */ }
   }
 
   res.setHeader('X-Cache', redis ? 'miss' : 'none');
