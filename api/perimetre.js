@@ -22,7 +22,7 @@
 // demande puis mis en cache, faute de pipeline programmé.
 
 const { getClient } = require('../lib/redis');
-const { pasEnDegres, celluleDe, cleCellule, polygonesDeCellules, PAS_M } = require('../lib/pixels');
+const { pasEnDegres, celluleDe, creerGrille, polygonesDeCellules, PAS_M } = require('../lib/pixels');
 
 const LAT = 44.98;   // Saumos, Gironde
 const LON = -1.02;
@@ -146,17 +146,22 @@ async function recuperer(capteur, cle, jours, dateDebut) {
 // Chaque cellule retient l'horodatage de sa DERNIÈRE détection : c'est lui
 // qui dira, plus bas, si la zone est encore active ou éteinte depuis
 // longtemps (leur partition « last_activity_state »).
-function marquer(derniereActivite, point, origine, pas) {
+function marquer(grille, point, origine, pas) {
   const { i, j } = celluleDe(point.lat, point.lon, origine, pas);
   const r = rayonCellules(point.capteur);
+  const valeurs = grille.valeurs;
   // Empreinte carrée, pas arrondie : le pixel d'un capteur est une tuile au
   // sol, et arrondir les coins d'une détection isolée lui donnerait l'allure
   // d'un rond — exactement ce qu'on cherche à éviter.
   for (let di = -r; di <= r; di++) {
+    const li = i + di - grille.i0;
+    if (li < 0 || li >= grille.hauteur) continue;
+    const base = li * grille.largeur - grille.j0;
     for (let dj = -r; dj <= r; dj++) {
-      const k = cleCellule(i + di, j + dj);
-      const vu = derniereActivite.get(k);
-      if (vu === undefined || point.ts > vu) derniereActivite.set(k, point.ts);
+      const co = j + dj - grille.j0;
+      if (co < 0 || co >= grille.largeur) continue;
+      const idx = base + j + dj;
+      if (point.ts > valeurs[idx]) valeurs[idx] = point.ts;
     }
   }
 }
@@ -187,7 +192,7 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const cleCache = 'perimetre:v6';
+  const cleCache = 'perimetre:v7';
   let redis = null;
   try {
     const p = getClient();
@@ -250,37 +255,58 @@ module.exports = async (req, res) => {
   let zones = [];
   let cellulesTotal = 0;
   try {
-    // Dernière activité par cellule : c'est la base de la coloration.
-    const derniereActivite = new Map();
-    tous.forEach((p) => marquer(derniereActivite, p, origine, pasGrille));
-    cellulesTotal = derniereActivite.size;
-
-    // Répartition des cellules par palier, puis une surface pleine par
-    // palier. Une cellule n'apparaît que dans un seul palier : les zones ne
-    // se superposent pas, chacune montre son propre état.
-    const parPalier = new Map();
-    derniereActivite.forEach((ts, k) => {
-      const age = (maintenant - ts) / HEURE;
-      const p = palierDe(age);
-      let ens = parPalier.get(p.id);
-      if (!ens) { ens = new Set(); parPalier.set(p.id, ens); }
-      ens.add(k);
+    // Étendue réelle des détections, élargie de la plus grande empreinte :
+    // la grille n'est allouée que sur la zone utile, pas sur toute la boîte
+    // de requête, qui serait bien plus vaste que le feu.
+    let iMin = Infinity, iMax = -Infinity, jMin = Infinity, jMax = -Infinity;
+    tous.forEach((p) => {
+      const c = celluleDe(p.lat, p.lon, origine, pasGrille);
+      if (c.i < iMin) iMin = c.i;
+      if (c.i > iMax) iMax = c.i;
+      if (c.j < jMin) jMin = c.j;
+      if (c.j > jMax) jMax = c.j;
     });
+    const marge = Math.max(...CAPTEURS.map(rayonCellules)) + 1;
+    const grille = creerGrille(
+      iMin - marge, jMin - marge,
+      (iMax - iMin) + 2 * marge + 1,
+      (jMax - jMin) + 2 * marge + 1
+    );
+
+    // Dernière activité par cellule : c'est la base de la coloration.
+    tous.forEach((p) => marquer(grille, p, origine, pasGrille));
+
+    // Répartition des cellules par palier. Une cellule n'appartient qu'à un
+    // seul palier : les zones ne se superposent pas, chacune montre son
+    // propre état.
+    const parPalier = new Map();
+    PALIERS_AGE.forEach((p) => parPalier.set(p.id, []));
+    const valeurs = grille.valeurs;
+    for (let idx = 0; idx < valeurs.length; idx++) {
+      const ts = valeurs[idx];
+      if (!ts) continue;
+      cellulesTotal++;
+      parPalier.get(palierDe((maintenant - ts) / HEURE).id).push(idx);
+    }
+
+    // Masque de travail partagé par tous les paliers, remis à zéro après
+    // chaque usage : une seule allocation au lieu d'une par palier.
+    const masque = new Uint8Array(valeurs.length);
 
     // Ordre du plus ancien au plus récent : le front encore chaud se dessine
     // par-dessus les zones éteintes.
     PALIERS_AGE.slice().reverse().forEach((p) => {
-      const ens = parPalier.get(p.id);
-      if (!ens || !ens.size) return;
-      const surfaces = polygonesDeCellules(ens, origine, pasGrille, 5);
+      const indices = parPalier.get(p.id);
+      if (!indices || !indices.length) return;
+      const surfaces = polygonesDeCellules(grille, indices, masque, origine, pasGrille, 5);
       if (!surfaces) return;
       zones.push({
         palier: p.id,
         libelle: p.libelle,
         couleur: p.couleur,
-        cellules: ens.size,
+        cellules: indices.length,
         // Surface au sol : chaque cellule fait PAS_M × PAS_M.
-        surfaceKm2: Math.round(ens.size * (PAS_M / 1000) * (PAS_M / 1000) * 100) / 100,
+        surfaceKm2: Math.round(indices.length * (PAS_M / 1000) * (PAS_M / 1000) * 100) / 100,
         surfaces,
       });
     });
