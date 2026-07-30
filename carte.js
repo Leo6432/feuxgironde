@@ -345,8 +345,11 @@
             weight: p.dernier ? 3.0 : 1.0 + 0.8 * p.progres,
             opacity: p.dernier ? 0.95 : 0.16 + 0.34 * p.progres,
             dashArray: p.dernier ? null : '2 6',
-            lineCap: 'round',
-            lineJoin: 'round',
+            // Angles vifs : des jointures arrondies gommeraient les coins des
+            // pixels de la grille, surtout sur le trait épais de la dernière
+            // limite — c'est justement l'escalier qu'on veut voir.
+            lineCap: 'butt',
+            lineJoin: 'miter',
             fill: false,
           };
         },

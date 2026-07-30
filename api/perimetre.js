@@ -139,11 +139,11 @@ function marquer(occupees, point, origine, pas) {
   const { i, j } = celluleDe(point.lat, point.lon, origine, pas);
   const r = RAYON_CELLULES[instrumentDe(point.capteur)] || RAYON_CELLULES_DEFAUT;
   let ajoutees = 0;
+  // Empreinte carrée, pas arrondie : le pixel d'un capteur est une tuile au
+  // sol, et arrondir les coins d'une détection isolée lui donnerait l'allure
+  // d'un rond — exactement ce qu'on cherche à éviter.
   for (let di = -r; di <= r; di++) {
     for (let dj = -r; dj <= r; dj++) {
-      // Empreinte arrondie plutôt que carrée : au-delà du rayon, la cellule
-      // n'est pas couverte par le pixel du capteur.
-      if (di * di + dj * dj > r * r + r) continue;
       const k = cleCellule(i + di, j + dj);
       if (!occupees.has(k)) { occupees.add(k); ajoutees++; }
     }
