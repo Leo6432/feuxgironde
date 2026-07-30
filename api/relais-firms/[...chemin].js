@@ -27,7 +27,8 @@ const JOURS_MAX = 10;
 const DELAI_MS = 55000;
 
 function refuser(res, code, raison) {
-  res.status(code).type('text/plain').send(raison + '\n');
+  res.setHeader('Content-Type', 'text/plain');
+  res.status(code).send(raison + '\n');
 }
 
 module.exports = async (req, res) => {
@@ -98,5 +99,6 @@ module.exports = async (req, res) => {
   // La chaîne amont tourne toutes les 30 minutes et redemande les mêmes
   // journées : le cache épargne autant d'appels à notre quota.
   res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
-  res.status(200).type('text/csv').send(texte);
+  res.setHeader('Content-Type', 'text/csv');
+  res.status(200).send(texte);
 };
