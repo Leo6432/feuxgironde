@@ -4,5 +4,11 @@
       "path": "/api/perimetre-precalcul",
       "schedule": "0 4 * * *"
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/relais-firms/(.*)",
+      "destination": "/api/relais-firms"
+    }
   ]
 }
