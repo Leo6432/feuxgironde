@@ -7,9 +7,10 @@
 // réparties en paliers selon l'ancienneté de cette activité — du rouge
 // (encore chaud) au beige pâle (plus rien depuis plus de 40 h).
 //
-// La barre temporelle rejoue cet état à une date passée : chaque cran
-// interroge le serveur, qui recolore les zones selon l'ancienneté mesurée
-// depuis cet instant-là.
+// La barre temporelle rejoue cet état à une date passée, jusqu'à deux
+// semaines en arrière : chaque cran lit un état déjà calculé et archivé côté
+// serveur (voir api/perimetre-precalcul.js), plutôt que de déclencher son
+// propre calcul au moment où l'utilisateur y arrive.
 //
 // Les bords en escalier sont voulus : ce sont les pixels de la grille, à la
 // résolution réelle des capteurs. Rien n'est lissé ni arrondi ici, sinon on
@@ -266,12 +267,19 @@
       if (blocTemps) blocTemps.removeAttribute('hidden');
 
       if (note) {
+        // Une date sans donnée ne doit pas se lire comme « aucun feu » : on
+        // annonce d'abord l'absence de données, pas un décompte de zéro.
+        if (d.horsArchive) {
+          note.classList.add('stale');
+          note.textContent = 'Aucune donnée à cette date. ' + (d.avertissement || '');
+          return;
+        }
         var texte = (d.foyers || 0) + ' foyer' + ((d.foyers || 0) > 1 ? 's' : '') +
           ' détecté' + ((d.foyers || 0) > 1 ? 's' : '') + ' — ' + (d.zone || 'France');
         // Toute dégradation reste annoncée : sans le contour du pays, des feux
         // juste au-delà des frontières peuvent apparaître, et il ne faut pas
         // laisser croire le contraire.
-        if (d.avertissement) texte += '. ' + d.avertissement;
+        if (d.avertissement) { note.classList.add('stale'); texte += '. ' + d.avertissement; }
         else note.classList.remove('stale');
         note.textContent = texte + '.';
       }

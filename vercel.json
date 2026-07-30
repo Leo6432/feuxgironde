@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/perimetre-precalcul",
+      "schedule": "0 4 * * *"
+    }
+  ]
+}
