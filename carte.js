@@ -2,10 +2,14 @@
 //
 // Les données viennent de /api/perimetre, qui reprend le produit
 // `last_activity_state` du site nicolaslecorvec.github.io/fumees-
-// nouvelle_aquitaine : chaque cellule d'une grille de 250 m retient
+// nouvelle_aquitaine : chaque cellule d'une grille de 40 m retient
 // l'horodatage de sa dernière détection satellite, et les cellules sont
 // réparties en paliers selon l'ancienneté de cette activité — du rouge
 // (encore chaud) au beige pâle (plus rien depuis plus de 40 h).
+//
+// La barre temporelle rejoue cet état à une date passée : chaque cran
+// interroge le serveur, qui recolore les zones selon l'ancienneté mesurée
+// depuis cet instant-là.
 //
 // Les bords en escalier sont voulus : ce sont les pixels de la grille, à la
 // résolution réelle des capteurs. Rien n'est lissé ni arrondi ici, sinon on
@@ -282,6 +286,16 @@
     // un seul palier, donc les zones ne se recouvrent pas — la carte montre
     // vraiment l'état de chaque portion de terrain, pas un simple cumul.
 
+    var calqueZones = null;
+    var calquesActifs = [];
+    var cadrageFait = false;
+
+    function viderCalques() {
+      if (calqueZones) { carte.removeLayer(calqueZones); calqueZones = null; }
+      calquesActifs.forEach(function (c) { carte.removeLayer(c); });
+      calquesActifs = [];
+    }
+
     function afficherZones(d) {
       var zones = (d.zones || []).filter(function (z) { return z && z.surfaces; });
       if (!zones.length) return null;
@@ -326,8 +340,14 @@
           );
         },
       }).addTo(carte);
+      calqueZones = groupe;
 
-      try { carte.fitBounds(groupe.getBounds().pad(0.12)); } catch (e) { /* forme vide */ }
+      // Cadrage une seule fois : le refaire à chaque cran de curseur ferait
+      // sauter la vue sous la main de l'utilisateur, et empêcherait de zoomer
+      // sur un secteur pour y suivre la progression.
+      if (!cadrageFait) {
+        try { carte.fitBounds(groupe.getBounds().pad(0.12)); cadrageFait = true; } catch (e) { /* forme vide */ }
+      }
 
       // Légende : un palier par ligne, avec la surface concernée.
       var legende = document.getElementById('fg-paliers');
@@ -340,17 +360,16 @@
         }).join('');
       }
 
-      var etiquette = document.getElementById('fg-time-label');
-      if (etiquette) {
-        var recent = zones.find(function (z) { return z.palier === 'h00_08'; });
-        etiquette.textContent = recent
-          ? 'encore actif sur ≈ ' + recent.surfaceKm2.toLocaleString('fr-FR') + ' km²'
-          : 'plus aucune détection depuis 8 h';
-      }
-      var blocTemps = document.getElementById('fg-time');
-      if (blocTemps) blocTemps.removeAttribute('hidden');
-
       return zones;
+    }
+
+    function majEtiquette(d, zones) {
+      var etiquette = document.getElementById('fg-time-label');
+      if (!etiquette) return;
+      var recent = (zones || []).find(function (z) { return z.palier === 'h00_08'; });
+      etiquette.textContent = heureFr(d.instant) + ' — ' + (recent
+        ? 'actif sur ≈ ' + recent.surfaceKm2.toLocaleString('fr-FR') + ' km²'
+        : 'aucune détection dans les 8 h précédentes');
     }
 
     function afficherFoyersActifs(actifs) {
@@ -361,7 +380,7 @@
         if (frp > frpMax) frpMax = frp;
         frpActif += frp;
         if (ts > derniereTs) derniereTs = ts;
-        L.circleMarker([lat, lon], {
+        calquesActifs.push(L.circleMarker([lat, lon], {
           radius: 4, weight: 1, color: '#7a2712',
           fillColor: COULEURS_ACTIF[classeFrp(frp)], fillOpacity: 0.92,
         })
@@ -369,18 +388,102 @@
             '<strong>' + (frp ? '≈ ' + Math.round(frp) + ' MW' : 'puissance inconnue') + '</strong><br>' +
             (isFinite(ts) ? 'détecté ' + heureFr(ts) : '')
           )
-          .addTo(carte);
+          .addTo(carte));
       });
       return { nb: (actifs || []).length, frpMax: frpMax, derniereTs: derniereTs };
     }
 
-    fetch('/api/perimetre')
-      .then(function (r) { return r.json(); })
+    // ── Barre temporelle ────────────────────────────────────────────────
+    // Chaque cran demande au serveur l'état du feu à cette date : les zones
+    // y sont recolorées selon l'ancienneté mesurée depuis cet instant, et non
+    // depuis maintenant. Les états passés ne bougeant plus, le serveur les
+    // garde en cache — un cran déjà visité revient immédiatement.
+
+    var curseur = document.getElementById('fg-time-range');
+    var blocTemps = document.getElementById('fg-time');
+    var boutonLecture = document.getElementById('fg-time-play');
+    var instants = [];
+    var chargementEnCours = null;
+    var lectureTimer = null;
+
+    function afficherEtat(d) {
+      viderCalques();
+      var zones = afficherZones(d);
+      var bilan = afficherFoyersActifs(d.actifs);
+      chiffres(bilan.nb, bilan.frpMax, bilan.derniereTs ? heureFr(bilan.derniereTs) : '—');
+      majEtiquette(d, zones);
+      if (blocTemps) blocTemps.removeAttribute('hidden');
+    }
+
+    function chargerInstant(instant) {
+      // Une requête plus récente annule la précédente : en glissant le
+      // curseur, seules les réponses de la dernière position comptent, sinon
+      // une réponse tardive écraserait l'affichage courant.
+      var jeton = {};
+      chargementEnCours = jeton;
+      var url = '/api/perimetre' + (instant ? ('?instant=' + instant) : '');
+      return fetch(url)
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (chargementEnCours !== jeton) return null;   // position dépassée
+          if (!d || !d.ok) { echec('État du feu indisponible pour le moment.'); return null; }
+          afficherEtat(d);
+          return d;
+        });
+    }
+
+    function arreterLecture() {
+      if (lectureTimer) { clearInterval(lectureTimer); lectureTimer = null; }
+      if (boutonLecture) boutonLecture.textContent = '▶ Lecture';
+    }
+
+    function demarrerLecture() {
+      if (!curseur || !instants.length) return;
+      if (boutonLecture) boutonLecture.textContent = '❚❚ Pause';
+      // Repart du début si on est déjà au bout.
+      if (+curseur.value >= instants.length - 1) curseur.value = '0';
+      lectureTimer = setInterval(function () {
+        var suivant = +curseur.value + 1;
+        if (suivant >= instants.length) { arreterLecture(); return; }
+        curseur.value = String(suivant);
+        chargerInstant(instants[suivant]).catch(function () { arreterLecture(); });
+      }, 900);
+      chargerInstant(instants[+curseur.value]);
+    }
+
+    chargerInstant(null)
       .then(function (d) {
-        if (!d || !d.ok) { echec('État du feu indisponible pour le moment.'); return; }
-        afficherZones(d);
-        var bilan = afficherFoyersActifs(d.actifs);
-        chiffres(bilan.nb, bilan.frpMax, bilan.derniereTs ? heureFr(bilan.derniereTs) : '—');
+        if (!d) return;
+        instants = Array.isArray(d.instants) ? d.instants : [];
+        if (!curseur || !blocTemps || instants.length < 2) return;
+
+        curseur.min = '0';
+        curseur.max = String(instants.length - 1);
+        curseur.value = String(instants.length - 1);
+
+        var min = document.getElementById('fg-time-min');
+        var max = document.getElementById('fg-time-max');
+        if (min) min.textContent = heureFr(instants[0]);
+        if (max) max.textContent = 'maintenant';
+
+        // Le glissement émet un événement par pixel parcouru : sans ce
+        // délai, on lancerait des dizaines de requêtes pour un seul geste.
+        var attente = null;
+        curseur.addEventListener('input', function () {
+          arreterLecture();
+          if (attente) clearTimeout(attente);
+          attente = setTimeout(function () {
+            chargerInstant(instants[+curseur.value])
+              .catch(function () { echec('État du feu indisponible pour le moment.'); });
+          }, 180);
+        });
+
+        if (boutonLecture) {
+          boutonLecture.addEventListener('click', function () {
+            if (lectureTimer) arreterLecture();
+            else demarrerLecture();
+          });
+        }
       })
       .catch(function (e) {
         if (window.console && console.error) console.error(e);

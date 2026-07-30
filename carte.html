@@ -51,8 +51,8 @@
 
 <div class="container page-head">
   <span class="kicker">Données NASA FIRMS · satellites VIIRS</span>
-  <h1>L’état du feu, zone par zone</h1>
-  <p class="measure">La carte montre, pour chaque portion de terrain, <strong>depuis combien de temps un satellite ne l’a plus vue chaude</strong> : du <strong style="color:#CE1B26">rouge</strong> (encore actif) au beige pâle (éteint depuis plus de 40 heures). Les bords en escalier correspondent à la résolution réelle des pixels satellite (250 m) — ce ne sont pas des contours lissés. Un satellite ne passe que quelques fois par jour : <strong>l’absence de détection ne veut pas dire l’absence de feu</strong>. Heures françaises. Ce n’est ni le périmètre officiel de l’incendie, ni un front de flammes continu, ni une carte des secours.</p>
+  <h1>La progression du feu, heure par heure</h1>
+  <p class="measure">La carte montre, pour chaque portion de terrain, <strong>depuis combien de temps un satellite ne l’a plus vue chaude</strong> : du <strong style="color:#CE1B26">rouge</strong> (encore actif) au beige pâle (éteint depuis plus de 40 heures). <strong>Déplacez le curseur</strong> pour remonter jusqu’au départ du feu, ou lancez la lecture. Les bords en escalier correspondent à la résolution des pixels satellite — ce ne sont pas des contours lissés. Un satellite ne passe que quelques fois par jour : <strong>l’absence de détection ne veut pas dire l’absence de feu</strong>. Heures françaises. Ce n’est ni le périmètre officiel de l’incendie, ni un front de flammes continu, ni une carte des secours.</p>
 </div>
 
 <section class="section" style="padding-top:0">
@@ -64,11 +64,16 @@
 
     <div class="time-bar" id="fg-time" hidden>
       <div class="time-head">
-        <label>Dernière activité détectée</label>
-        <output id="fg-time-label"></output>
+        <label for="fg-time-range">Remonter dans le temps</label>
+        <output id="fg-time-label" for="fg-time-range"></output>
       </div>
-      <div class="map-legend" id="fg-paliers" style="margin:8px 0 0"></div>
-      <p class="p-note" style="margin-top:8px">Chaque zone est colorée selon le temps écoulé depuis la <strong>dernière fois qu’un satellite l’a vue chaude</strong> : rouge là où ça brûle encore, beige pâle là où plus rien n’a été détecté depuis plus de 40 heures. Survolez une zone pour sa surface. <strong>Ce n’est ni une surface brûlée officielle, ni un front de flammes continu.</strong></p>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button type="button" id="fg-time-play" aria-label="Lecture de la progression" style="flex:0 0 auto;min-width:88px">▶ Lecture</button>
+        <input type="range" id="fg-time-range" min="0" max="0" step="1" value="0" style="flex:1">
+      </div>
+      <div class="time-ends"><span id="fg-time-min"></span><span id="fg-time-max"></span></div>
+      <div class="map-legend" id="fg-paliers" style="margin:10px 0 0"></div>
+      <p class="p-note" style="margin-top:8px">Chaque zone est colorée selon le temps écoulé, <strong>à la date choisie</strong>, depuis la dernière fois qu’un satellite l’a vue chaude : rouge là où ça brûlait encore, beige pâle là où plus rien n’avait été détecté depuis plus de 40 heures. Survolez une zone pour sa surface. <strong>Ce n’est ni une surface brûlée officielle, ni un front de flammes continu.</strong></p>
     </div>
 
     <div class="map-legend">
@@ -80,7 +85,7 @@
 
     <div class="marks" style="margin-top:28px">
       <div class="mark">
-        <div class="mark-k">Foyers actifs (dernières 6 h)</div>
+        <div class="mark-k">Foyers actifs (6 h avant la date choisie)</div>
         <div class="mark-v" id="fg-carte-total">—</div>
       </div>
       <div class="mark">

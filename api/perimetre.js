@@ -3,12 +3,16 @@
 // github.com/nicolaslecorvec/fumees-nouvelle_aquitaine.
 //
 // Principe :
-//   — chaque détection FIRMS marque des cellules sur une grille de 250 m
+//   — chaque détection FIRMS marque des cellules sur une grille de 40 m
 //     (voisinage plus large pour MODIS, dont le pixel couvre ~1 km) ;
 //   — chaque cellule retient l'horodatage de sa DERNIÈRE détection ;
 //   — les cellules sont réparties en paliers selon l'ancienneté de cette
 //     dernière activité (PROGRESSION_AGE_BINS chez eux), du rouge « vu chaud
 //     à l'instant » au beige pâle « plus rien depuis plus de 40 h ».
+//
+// Le paramètre ?instant= rejoue l'état du feu à une date passée : seules les
+// détections antérieures comptent, et l'ancienneté se mesure par rapport à
+// cet instant — c'est ce qui alimente la barre temporelle de la page.
 //
 // Une cellule n'appartient qu'à un seul palier : les zones ne se superposent
 // pas, chacune montre l'état réel de sa portion de terrain. Les bords en
@@ -178,6 +182,20 @@ const PALIERS_AGE = [
   { id: 'h40_plus', min: 40, max: Infinity, libelle: '40 h et plus', couleur: '#fff7bc' },
 ];
 
+// Positions du curseur temporel : un cran toutes les PAS_HEURES depuis le
+// départ du feu, plus l'instant présent en bout de course. Le client s'en
+// sert pour construire sa barre, sans dupliquer ce découpage.
+const PAS_HEURES = 6;
+
+function instantsDisponibles(maintenant) {
+  const debut = new Date(DEPART_FEU + 'T00:00:00Z').getTime();
+  const pas = PAS_HEURES * 3600000;
+  const liste = [];
+  for (let t = debut + pas; t < maintenant; t += pas) liste.push(t);
+  liste.push(maintenant);
+  return liste;
+}
+
 function palierDe(ageHeures) {
   return PALIERS_AGE.find((b) => ageHeures >= b.min && ageHeures < b.max)
     || PALIERS_AGE[PALIERS_AGE.length - 1];
@@ -192,7 +210,23 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const cleCache = 'perimetre:v7';
+  const maintenant = Date.now();
+  const instants = instantsDisponibles(maintenant);
+
+  // Instant demandé par le curseur : on le recale sur la position la plus
+  // proche de la liste, pour que deux requêtes voisines partagent le même
+  // cache au lieu d'en créer une entrée par pixel de curseur.
+  let instant = instants[instants.length - 1];
+  try {
+    const brut = Number(new URL(req.url, 'http://x').searchParams.get('instant'));
+    if (isFinite(brut) && brut > 0) {
+      instant = instants.reduce((meilleur, t) =>
+        Math.abs(t - brut) < Math.abs(meilleur - brut) ? t : meilleur, instants[0]);
+    }
+  } catch (e) { /* on reste sur l'instant le plus récent */ }
+
+  const estDernier = instant === instants[instants.length - 1];
+  const cleCache = 'perimetre:v8:' + instant;
   let redis = null;
   try {
     const p = getClient();
@@ -230,18 +264,20 @@ module.exports = async (req, res) => {
     return;
   }
 
+  // Seules les détections antérieures à l'instant choisi comptent : c'est ce
+  // qui permet de rejouer l'état du feu tel qu'il était alors.
   const tous = ok.flatMap((r) => r.pts)
     .filter((p) => isFinite(p.lat) && isFinite(p.lon) && isFinite(p.ts))
+    .filter((p) => p.ts <= instant)
     .filter((p) => distanceKm(LAT, LON, p.lat, p.lon) <= RAYON_KM)
     .sort((a, b) => a.ts - b.ts);
 
   if (!tous.length) {
-    res.status(200).json({ ok: true, zones: [], actifs: [] });
+    res.status(200).json({ ok: true, zones: [], actifs: [], instant, instants, paliers: PALIERS_AGE.map((p) => ({ id: p.id, libelle: p.libelle, couleur: p.couleur })) });
     return;
   }
 
   const HEURE = 3600000;
-  const maintenant = Date.now();
 
   // Repère de la grille de pixels : origine calée sur un multiple du pas,
   // pour que les cellules tombent toujours au même endroit d'un calcul au
@@ -286,7 +322,7 @@ module.exports = async (req, res) => {
       const ts = valeurs[idx];
       if (!ts) continue;
       cellulesTotal++;
-      parPalier.get(palierDe((maintenant - ts) / HEURE).id).push(idx);
+      parPalier.get(palierDe((instant - ts) / HEURE).id).push(idx);
     }
 
     // Masque de travail partagé par tous les paliers, remis à zéro après
@@ -319,7 +355,7 @@ module.exports = async (req, res) => {
   // points colorés par puissance, comme la couche « foyers actuels » de leur
   // carte — le contour, lui, ne dit pas ce qui brûle encore.
   const actifs = tous
-    .filter((p) => maintenant - p.ts <= FENETRE_ACTIVE_H * HEURE)
+    .filter((p) => instant - p.ts <= FENETRE_ACTIVE_H * HEURE)
     .map((p) => [+p.lat.toFixed(5), +p.lon.toFixed(5), Math.round(p.frp), p.ts]);
 
   const sortie = {
@@ -328,6 +364,9 @@ module.exports = async (req, res) => {
     produit: 'last_activity_state',
     depuis: DEPART_FEU,
     pasGrilleM: PAS_M,
+    pasHeures: PAS_HEURES,
+    instant,
+    instants,
     detections: tous.length,
     cellules: cellulesTotal,
     paliers: PALIERS_AGE.map((p) => ({ id: p.id, libelle: p.libelle, couleur: p.couleur })),
@@ -336,7 +375,10 @@ module.exports = async (req, res) => {
   };
 
   if (redis) {
-    try { await redis.set(cleCache, JSON.stringify(sortie), { EX: 1200 }); } catch (e) { /* tant pis */ }
+    // Un instant passé ne bougera plus : on le garde longtemps. Le dernier
+    // cran, lui, reçoit encore des détections à chaque passage satellite.
+    const duree = estDernier ? 1200 : 30 * 86400;
+    try { await redis.set(cleCache, JSON.stringify(sortie), { EX: duree }); } catch (e) { /* tant pis */ }
   }
 
   res.setHeader('X-Cache', redis ? 'miss' : 'none');
