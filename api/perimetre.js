@@ -103,7 +103,7 @@ module.exports = async (req, res) => {
     );
     etat = etatFeux.sortie(
       instant, instants, zones, cellulesTotal, prepare.foyers.length,
-      etatFeux.foyersActifs(points, instant), geometrieFrance, prepare.ignores
+      etatFeux.foyersActifs(points, instant), geometrieFrance, prepare, detections
     );
   } catch (e) {
     res.status(200).json({ ok: false, raison: 'calcul des zones échoué : ' + e.message, instants });

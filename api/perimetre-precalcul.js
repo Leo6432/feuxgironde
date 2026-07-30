@@ -101,7 +101,7 @@ module.exports = async (req, res) => {
     );
     const etat = etatFeux.sortie(
       instant, instants, zones, cellulesTotal, prepare.foyers.length,
-      etatFeux.foyersActifs(points, instant), geometrieFrance, prepare.ignores
+      etatFeux.foyersActifs(points, instant), geometrieFrance, prepare, detections
     );
     await etatFeux.enregistrerEtat(redis, instant, etat, instant === dernier);
     calcules++;
