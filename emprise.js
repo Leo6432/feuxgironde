@@ -1,22 +1,38 @@
 (function () {
   'use strict';
 
-  var SAUMOS = [44.98, -1.02];
-  // Même palette que la carte principale : rouge pour ce qui vient d'être
-  // atteint, beige pâle pour ce qui l'a été il y a plusieurs jours.
-  var PALETTE = ['#fff7bc', '#fed976', '#feb24c', '#fd8d3c', '#f03b20', '#d7191c'];
+  // Vue initiale : la France entière. Pas de cadrage automatique sur les feux
+  // trouvés — sinon, un jour où seule la Gironde brûle, la carte zoomerait
+  // dessus et donnerait l'impression que le reste du pays n'est pas couvert.
+  var FRANCE = [46.6, 2.4];
+  var ZOOM_FRANCE = 6;
 
-  function couleurPour(t) {
-    var i = Math.min(PALETTE.length - 1, Math.floor(t * PALETTE.length));
-    return PALETTE[i];
-  }
+  // Les données viennent de /api/perimetre : notre propre moteur, qui couvre
+  // la France métropolitaine et la Corse. (Le pipeline repris de
+  // fumees-nouvelle_aquitaine, lui, est configuré pour le seul feu de Gironde
+  // — bbox et max_clusters dans son config.yaml — il ne peut donc pas servir
+  // ici.)
+  var SOURCE = '/api/perimetre';
 
-  var carte = L.map('map', { scrollWheelZoom: true }).setView(SAUMOS, 11);
+  var carte = L.map('map', { scrollWheelZoom: true }).setView(FRANCE, ZOOM_FRANCE);
 
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     maxZoom: 18,
-    attribution: 'Tiles © Esri — Maxar, Earthstar Geographics',
+    attribution: 'Tiles © Esri — Maxar, Earthstar Geographics · détections NASA FIRMS',
   }).addTo(carte);
+
+  var barre = document.getElementById('barre');
+  var curseur = document.getElementById('curseur');
+  var etiquette = document.getElementById('etiquette');
+  var boutonLecture = document.getElementById('lecture');
+
+  var instants = [];
+  var calque = null;
+  var minuteur = null;
+  // Jeton de course : en glissant le curseur, seule la réponse de la dernière
+  // position demandée doit s'afficher, sinon une réponse tardive écraserait
+  // l'état courant.
+  var enCours = null;
 
   function formateDate(ts) {
     return new Date(ts).toLocaleString('fr-FR', {
@@ -28,80 +44,93 @@
     });
   }
 
-  fetch('/api/progression')
-    .then(function (r) { return r.json(); })
-    .then(function (donnees) {
-      if (!donnees.ok || !donnees.pas || !donnees.pas.length) return;
+  function afficher(d) {
+    if (calque) { carte.removeLayer(calque); calque = null; }
 
-      var pas = donnees.pas;
-      var cumul = donnees.cumulKm2 || [];
-      var n = pas.length;
+    var zones = (d.zones || []).filter(function (z) { return z && z.surfaces; });
+    if (zones.length) {
+      calque = L.geoJSON({
+        type: 'FeatureCollection',
+        features: zones.map(function (z) {
+          return {
+            type: 'Feature',
+            geometry: z.surfaces,
+            properties: { couleur: z.couleur, libelle: z.libelle, surfaceKm2: z.surfaceKm2 },
+          };
+        }),
+      }, {
+        // Les bords en escalier viennent de la grille des pixels satellite :
+        // les laisser tels quels, les lisser effacerait cette information.
+        smoothFactor: 0,
+        style: function (f) {
+          return {
+            color: f.properties.couleur,
+            weight: 0.65,
+            opacity: 0.55,
+            fillColor: f.properties.couleur,
+            fillOpacity: 0.72,
+            lineCap: 'butt',
+            lineJoin: 'miter',
+          };
+        },
+        onEachFeature: function (f, couche) {
+          couche.bindTooltip(
+            '<b>' + f.properties.libelle + '</b><br>'
+              + f.properties.surfaceKm2.toLocaleString('fr-FR') + ' km²',
+            { sticky: true, opacity: 0.96 }
+          );
+        },
+      }).addTo(carte);
+    }
 
-      // Une couche par pas, colorée une fois pour toutes ; la barre ne fait
-      // qu'ajouter/retirer ces couches du fond de carte selon le curseur.
-      var couches = pas.map(function (p, i) {
-        var t = n > 1 ? i / (n - 1) : 1;
-        var c = couleurPour(t);
-        return L.geoJSON(p.geometrie, {
-          style: { color: c, weight: 0, fillColor: c, fillOpacity: 0.55 },
-        });
+    var total = zones.reduce(function (s, z) { return s + (z.surfaceKm2 || 0); }, 0);
+    etiquette.textContent = formateDate(d.instant) + ' · '
+      + (Math.round(total * 10) / 10).toLocaleString('fr-FR') + ' km²';
+  }
+
+  function charger(instant) {
+    var jeton = {};
+    enCours = jeton;
+    return fetch(SOURCE + (instant ? ('?instant=' + instant) : ''))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (enCours !== jeton) return null;      // position dépassée
+        if (!d || !d.ok) return null;
+        afficher(d);
+        return d;
       });
+  }
 
-      var etendue = L.featureGroup(couches);
-      if (couches.length) {
-        carte.fitBounds(etendue.getBounds(), { padding: [20, 20] });
-      }
+  function arreter() {
+    if (minuteur) { clearInterval(minuteur); minuteur = null; }
+    boutonLecture.textContent = '▶';
+  }
 
-      var barre = document.getElementById('barre');
-      var curseur = document.getElementById('curseur');
-      var etiquette = document.getElementById('etiquette');
-      var boutonLecture = document.getElementById('lecture');
+  charger(null).then(function (d) {
+    if (!d) return;
+    instants = d.instants || [];
+    if (instants.length < 2) return;
 
-      curseur.max = String(n - 1);
-      curseur.value = String(n - 1);
-      barre.hidden = false;
+    curseur.max = String(instants.length - 1);
+    curseur.value = String(instants.length - 1);
+    barre.hidden = false;
 
-      var indexAffiche = -1;
-      function afficherJusqua(index) {
-        if (index === indexAffiche) return;
-        for (var i = 0; i < n; i++) {
-          var doitEtreVisible = i <= index;
-          var estVisible = carte.hasLayer(couches[i]);
-          if (doitEtreVisible && !estVisible) couches[i].addTo(carte);
-          if (!doitEtreVisible && estVisible) carte.removeLayer(couches[i]);
-        }
-        indexAffiche = index;
-        var p = pas[index];
-        etiquette.textContent = formateDate(p.t) + ' · ' + (cumul[index] || 0) + ' km²';
-      }
-      afficherJusqua(n - 1);
+    curseur.addEventListener('input', function () {
+      arreter();
+      charger(instants[Number(curseur.value)]);
+    });
 
-      curseur.addEventListener('input', function () {
-        afficherJusqua(Number(curseur.value));
-      });
-
-      var minuteur = null;
-      boutonLecture.addEventListener('click', function () {
-        if (minuteur) {
-          clearInterval(minuteur);
-          minuteur = null;
-          boutonLecture.textContent = '▶';
-          return;
-        }
-        if (Number(curseur.value) >= n - 1) curseur.value = '0';
-        boutonLecture.textContent = '❚❚';
-        minuteur = setInterval(function () {
-          var suivant = Number(curseur.value) + 1;
-          if (suivant > n - 1) {
-            clearInterval(minuteur);
-            minuteur = null;
-            boutonLecture.textContent = '▶';
-            return;
-          }
-          curseur.value = String(suivant);
-          afficherJusqua(suivant);
-        }, 500);
-      });
-    })
-    .catch(function () { /* rien à afficher */ });
+    boutonLecture.addEventListener('click', function () {
+      if (minuteur) { arreter(); return; }
+      if (Number(curseur.value) >= instants.length - 1) curseur.value = '0';
+      boutonLecture.textContent = '❚❚';
+      minuteur = setInterval(function () {
+        var suivant = Number(curseur.value) + 1;
+        if (suivant >= instants.length) { arreter(); return; }
+        curseur.value = String(suivant);
+        charger(instants[suivant]);
+      }, 900);
+      charger(instants[Number(curseur.value)]);
+    });
+  }).catch(function () { /* la carte reste affichée, sans données */ });
 })();
