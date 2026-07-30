@@ -1,11 +1,15 @@
-// Carte du feu (page /carte.html) : contour net de l'emprise cumulée
-// (voir /api/perimetre), par cliché figé toutes les 6h — même principe que
-// le pipeline (hors ligne) du site nicolaslecorvec.github.io/fumees-
-// nouvelle_aquitaine : chaque détection FIRMS devient un petit cercle,
-// tous ces cercles sont fusionnés en une vraie forme géométrique (union de
-// polygones), calculée côté serveur. Choisir un autre cliché dans la liste
-// recalcule le contour jusqu'à cet instant — ce n'est plus une animation
-// continue minute par minute, mais un vrai contour vectoriel à chaque fois.
+// Carte du feu (page /carte.html) : état d'activité zone par zone.
+//
+// Les données viennent de /api/perimetre, qui reprend le produit
+// `last_activity_state` du site nicolaslecorvec.github.io/fumees-
+// nouvelle_aquitaine : chaque cellule d'une grille de 250 m retient
+// l'horodatage de sa dernière détection satellite, et les cellules sont
+// réparties en paliers selon l'ancienneté de cette activité — du rouge
+// (encore chaud) au beige pâle (plus rien depuis plus de 40 h).
+//
+// Les bords en escalier sont voulus : ce sont les pixels de la grille, à la
+// résolution réelle des capteurs. Rien n'est lissé ni arrondi ici, sinon on
+// effacerait précisément cette information.
 
 (function () {
   var conteneur = document.getElementById('fg-map');
@@ -271,96 +275,53 @@
       });
     }
 
-    // ── Emprises cumulées (voir /api/perimetre) ──────────────────────────
-    // Toutes les étapes sont tracées EN MÊME TEMPS, superposées : c'est leur
-    // emboîtement qui dessine la progression, chaque trait marquant l'étendue
-    // atteinte à une date. Rendu repris de leur carte : dégradé jaune →
-    // orange → rouge selon l'ancienneté, anciennes étapes en pointillés
-    // estompés, dernière limite en rouge plein et renforcée.
+    // ── État d'activité, cellule par cellule (voir /api/perimetre) ──────
+    // Chaque zone est colorée selon l'ancienneté de sa DERNIÈRE détection :
+    // rouge là où les satellites voient encore chaud, beige pâle là où plus
+    // rien n'a été vu depuis plus de 40 heures. Une cellule n'appartient qu'à
+    // un seul palier, donc les zones ne se recouvrent pas — la carte montre
+    // vraiment l'état de chaque portion de terrain, pas un simple cumul.
 
-    function interpolerRvb(a, b, t) {
-      var k = Math.max(0, Math.min(1, t));
-      return 'rgb(' +
-        Math.round(a[0] + (b[0] - a[0]) * k) + ',' +
-        Math.round(a[1] + (b[1] - a[1]) * k) + ',' +
-        Math.round(a[2] + (b[2] - a[2]) * k) + ')';
-    }
-
-    function couleurEmprise(progres) {
-      if (progres <= 0.55) return interpolerRvb([255, 211, 94], [255, 126, 43], progres / 0.55);
-      return interpolerRvb([255, 126, 43], [215, 25, 28], (progres - 0.55) / 0.45);
-    }
-
-    // Les lignes fermées d'une étape délimitent aussi une surface : on la
-    // remplit discrètement pour la dernière étape seulement, afin que
-    // l'emprise actuelle se lise d'un coup d'œil sans noyer les anneaux.
-    function lignesEnPolygones(g) {
-      var lignes = g.type === 'LineString' ? [g.coordinates] : g.coordinates;
-      var anneaux = lignes.filter(function (l) { return l.length >= 4; });
-      if (!anneaux.length) return null;
-      return { type: 'MultiPolygon', coordinates: anneaux.map(function (a) { return [a]; }) };
-    }
-
-    function afficherEmprises(d) {
-      var etapes = (d.etapes || []).filter(function (e) { return e && e.contour; });
-      if (!etapes.length) return null;
-
-      var derniere = etapes[etapes.length - 1];
-      var maxIndex = derniere.snapshot_index;
-
-      // Remplissage de l'emprise actuelle, sous les traits.
-      var polys = lignesEnPolygones(derniere.contour);
-      if (polys) {
-        L.geoJSON(polys, {
-          style: { stroke: false, fillColor: '#E8DDB0', fillOpacity: 0.42 },
-          interactive: false,
-        }).addTo(carte);
-      }
+    function afficherZones(d) {
+      var zones = (d.zones || []).filter(function (z) { return z && z.surfaces; });
+      if (!zones.length) return null;
 
       var groupe = L.geoJSON({
         type: 'FeatureCollection',
-        features: etapes.map(function (e) {
-          var progres = maxIndex > 1 ? (e.snapshot_index - 1) / (maxIndex - 1) : 1;
+        features: zones.map(function (z) {
           return {
             type: 'Feature',
-            geometry: e.contour,
+            geometry: z.surfaces,
             properties: {
-              progres: progres,
-              dernier: e.snapshot_index === maxIndex,
-              observed_until_utc: e.observed_until_utc,
-              detections: e.detections_cumulees,
-              sources: e.sources,
+              libelle: z.libelle,
+              couleur: z.couleur,
+              surfaceKm2: z.surfaceKm2,
+              cellules: z.cellules,
             },
           };
         }),
       }, {
-        // smoothFactor 0 : Leaflet ne simplifie pas le tracé au rendu. Les bords
-        // en escalier de la grille sont le résultat voulu — les arrondir
-        // reviendrait à effacer les pixels.
+        // smoothFactor 0 : Leaflet ne simplifie pas le tracé au rendu, et les
+        // jointures restent vives — les bords en escalier de la grille sont
+        // le résultat voulu, les arrondir effacerait les pixels.
         smoothFactor: 0,
         style: function (f) {
-          var p = f.properties;
           return {
-            color: p.dernier ? '#d7191c' : couleurEmprise(p.progres),
-            weight: p.dernier ? 3.0 : 1.0 + 0.8 * p.progres,
-            opacity: p.dernier ? 0.95 : 0.16 + 0.34 * p.progres,
-            dashArray: p.dernier ? null : '2 6',
-            // Angles vifs : des jointures arrondies gommeraient les coins des
-            // pixels de la grille, surtout sur le trait épais de la dernière
-            // limite — c'est justement l'escalier qu'on veut voir.
+            color: f.properties.couleur,
+            weight: 0.65,
+            opacity: 0.55,
+            fillColor: f.properties.couleur,
+            fillOpacity: 0.72,
             lineCap: 'butt',
             lineJoin: 'miter',
-            fill: false,
           };
         },
         onEachFeature: function (f, couche) {
           var p = f.properties;
-          var quand = new Date(p.observed_until_utc).getTime();
           couche.bindTooltip(
-            (p.dernier ? '<b>Dernière limite détectée</b>' : '<b>Étape cumulative</b>') +
-            '<br>Observations jusqu’au ' + (isFinite(quand) ? heureFr(quand) : '—') +
-            '<br>' + p.detections + ' détections cumulées' +
-            '<br><small>Ni surface brûlée ni front continu.</small>',
+            '<b>Dernière activité : ' + p.libelle + '</b>' +
+            '<br>' + p.surfaceKm2.toLocaleString('fr-FR') + ' km² détectés' +
+            '<br><small>Ni surface brûlée officielle ni front continu.</small>',
             { sticky: true, opacity: 0.96 }
           );
         },
@@ -368,16 +329,28 @@
 
       try { carte.fitBounds(groupe.getBounds().pad(0.12)); } catch (e) { /* forme vide */ }
 
+      // Légende : un palier par ligne, avec la surface concernée.
+      var legende = document.getElementById('fg-paliers');
+      if (legende) {
+        legende.innerHTML = (d.paliers || []).map(function (pal) {
+          var z = zones.find(function (x) { return x.palier === pal.id; });
+          var surface = z ? z.surfaceKm2.toLocaleString('fr-FR') + ' km²' : '—';
+          return '<span><i style="background:' + pal.couleur + '"></i> ' +
+            pal.libelle + ' <b style="opacity:.7">' + surface + '</b></span>';
+        }).join('');
+      }
+
       var etiquette = document.getElementById('fg-time-label');
       if (etiquette) {
-        var quand = new Date(derniere.observed_until_utc).getTime();
-        etiquette.textContent = etapes.length + ' étapes · dernière limite ' +
-          (isFinite(quand) ? heureFr(quand) : '—');
+        var recent = zones.find(function (z) { return z.palier === 'h00_08'; });
+        etiquette.textContent = recent
+          ? 'encore actif sur ≈ ' + recent.surfaceKm2.toLocaleString('fr-FR') + ' km²'
+          : 'plus aucune détection depuis 8 h';
       }
       var blocTemps = document.getElementById('fg-time');
       if (blocTemps) blocTemps.removeAttribute('hidden');
 
-      return derniere;
+      return zones;
     }
 
     function afficherFoyersActifs(actifs) {
@@ -404,14 +377,14 @@
     fetch('/api/perimetre')
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d || !d.ok) { echec('Emprises satellite indisponibles pour le moment.'); return; }
-        afficherEmprises(d);
+        if (!d || !d.ok) { echec('État du feu indisponible pour le moment.'); return; }
+        afficherZones(d);
         var bilan = afficherFoyersActifs(d.actifs);
         chiffres(bilan.nb, bilan.frpMax, bilan.derniereTs ? heureFr(bilan.derniereTs) : '—');
       })
       .catch(function (e) {
         if (window.console && console.error) console.error(e);
-        echec('Emprises satellite indisponibles pour le moment.');
+        echec('État du feu indisponible pour le moment.');
       });
 
     // Note générale, prochain passage, planning des passages et autres

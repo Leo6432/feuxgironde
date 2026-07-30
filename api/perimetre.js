@@ -1,26 +1,28 @@
-// Emprises cumulées des détections FIRMS autour de Saumos, en lignes de
-// contour successives — reprise fidèle du produit
-// `cumulative_detection_envelopes` du dépôt
-// github.com/nicolaslecorvec/fumees-nouvelle_aquitaine
-// (pipeline/scripts/03_cumulative_detection_envelopes.py).
+// État d'activité du feu de Saumos, cellule par cellule — reprise du produit
+// `last_activity_state` du dépôt
+// github.com/nicolaslecorvec/fumees-nouvelle_aquitaine.
 //
-// Principe, tel qu'il est appliqué là-bas :
-//   — un cliché toutes les 6 heures (SNAPSHOT_STEP_HOURS) ;
-//   — à chaque cliché, l'union CUMULATIVE de petits cercles posés sous chaque
-//     détection depuis le départ du feu (empreinte prudente du pixel) ;
-//   — export non pas des surfaces pleines, mais de leurs FRONTIÈRES, en
-//     LineString / MultiLineString : superposées, elles dessinent des anneaux
-//     emboîtés qui retracent la progression, chaque trait étant une étape.
+// Principe :
+//   — chaque détection FIRMS marque des cellules sur une grille de 250 m
+//     (voisinage plus large pour MODIS, dont le pixel couvre ~1 km) ;
+//   — chaque cellule retient l'horodatage de sa DERNIÈRE détection ;
+//   — les cellules sont réparties en paliers selon l'ancienneté de cette
+//     dernière activité (PROGRESSION_AGE_BINS chez eux), du rouge « vu chaud
+//     à l'instant » au beige pâle « plus rien depuis plus de 40 h ».
+//
+// Une cellule n'appartient qu'à un seul palier : les zones ne se superposent
+// pas, chacune montre l'état réel de sa portion de terrain. Les bords en
+// escalier viennent de la grille — ce sont de vrais pixels, pas des arrondis.
 //
 // Ce n'est ni un périmètre brûlé officiel, ni un front de flammes continu :
-// juste l'étendue cumulée de ce que les satellites ont vu chaud.
+// juste ce que les satellites ont vu chaud, et quand.
 //
 // Différence d'exécution assumée : leur pipeline tourne hors ligne (Python,
 // geopandas/shapely) et publie un fichier figé ; ici tout est calculé à la
 // demande puis mis en cache, faute de pipeline programmé.
 
 const { getClient } = require('../lib/redis');
-const { pasEnDegres, celluleDe, cleCellule, contourDeCellules, PAS_M } = require('../lib/pixels');
+const { pasEnDegres, celluleDe, cleCellule, polygonesDeCellules, PAS_M } = require('../lib/pixels');
 
 const LAT = 44.98;   // Saumos, Gironde
 const LON = -1.02;
@@ -29,7 +31,6 @@ const RAYON_KM = 34;
 
 const JOURS_MAX = 10;
 const DEPART_FEU = '2026-07-22';
-const SNAPSHOT_HEURES = 6;      // SNAPSHOT_STEP_HOURS chez eux
 const FENETRE_ACTIVE_H = 6;
 
 // Empreinte au sol du pixel, par instrument : combien de cellules de grille
@@ -135,20 +136,40 @@ async function recuperer(capteur, cle, jours, dateDebut) {
 // point, plus son voisinage selon l'empreinte de l'instrument. C'est ce
 // marquage qui donne les bords en escalier — des pixels carrés, pas des
 // arrondis.
-function marquer(occupees, point, origine, pas) {
+//
+// Chaque cellule retient l'horodatage de sa DERNIÈRE détection : c'est lui
+// qui dira, plus bas, si la zone est encore active ou éteinte depuis
+// longtemps (leur partition « last_activity_state »).
+function marquer(derniereActivite, point, origine, pas) {
   const { i, j } = celluleDe(point.lat, point.lon, origine, pas);
   const r = RAYON_CELLULES[instrumentDe(point.capteur)] || RAYON_CELLULES_DEFAUT;
-  let ajoutees = 0;
   // Empreinte carrée, pas arrondie : le pixel d'un capteur est une tuile au
   // sol, et arrondir les coins d'une détection isolée lui donnerait l'allure
   // d'un rond — exactement ce qu'on cherche à éviter.
   for (let di = -r; di <= r; di++) {
     for (let dj = -r; dj <= r; dj++) {
       const k = cleCellule(i + di, j + dj);
-      if (!occupees.has(k)) { occupees.add(k); ajoutees++; }
+      const vu = derniereActivite.get(k);
+      if (vu === undefined || point.ts > vu) derniereActivite.set(k, point.ts);
     }
   }
-  return ajoutees;
+}
+
+// Paliers d'ancienneté de la dernière activité, reprise de leur
+// PROGRESSION_AGE_BINS : du rouge (vu chaud à l'instant) au beige pâle
+// (plus rien depuis plus de 40 h).
+const PALIERS_AGE = [
+  { id: 'h00_08', min: 0, max: 8, libelle: '0–8 h', couleur: '#d7191c' },
+  { id: 'h08_16', min: 8, max: 16, libelle: '8–16 h', couleur: '#f03b20' },
+  { id: 'h16_24', min: 16, max: 24, libelle: '16–24 h', couleur: '#fd8d3c' },
+  { id: 'h24_32', min: 24, max: 32, libelle: '24–32 h', couleur: '#feb24c' },
+  { id: 'h32_40', min: 32, max: 40, libelle: '32–40 h', couleur: '#fed976' },
+  { id: 'h40_plus', min: 40, max: Infinity, libelle: '40 h et plus', couleur: '#fff7bc' },
+];
+
+function palierDe(ageHeures) {
+  return PALIERS_AGE.find((b) => ageHeures >= b.min && ageHeures < b.max)
+    || PALIERS_AGE[PALIERS_AGE.length - 1];
 }
 
 module.exports = async (req, res) => {
@@ -160,7 +181,7 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const cleCache = 'perimetre:v4';
+  const cleCache = 'perimetre:v5';
   let redis = null;
   try {
     const p = getClient();
@@ -204,22 +225,12 @@ module.exports = async (req, res) => {
     .sort((a, b) => a.ts - b.ts);
 
   if (!tous.length) {
-    res.status(200).json({ ok: true, etapes: [], actifs: [] });
+    res.status(200).json({ ok: true, zones: [], actifs: [] });
     return;
   }
 
   const HEURE = 3600000;
-  const pas = SNAPSHOT_HEURES * HEURE;
-  const debutFeu = new Date(DEPART_FEU + 'T00:00:00Z').getTime();
   const maintenant = Date.now();
-
-  // Bornes des clichés : toutes les 6 h, en ne gardant que celles où quelque
-  // chose a effectivement été détecté (inutile de publier une étape vide).
-  const bornes = [];
-  for (let t = debutFeu + pas; t <= maintenant + pas; t += pas) {
-    bornes.push(Math.min(t, maintenant));
-    if (t >= maintenant) break;
-  }
 
   // Repère de la grille de pixels : origine calée sur un multiple du pas,
   // pour que les cellules tombent toujours au même endroit d'un calcul au
@@ -230,47 +241,45 @@ module.exports = async (req, res) => {
     lon: Math.floor(LON / pasGrille.dLon) * pasGrille.dLon,
   };
 
-  let etapes = [];
+  let zones = [];
+  let cellulesTotal = 0;
   try {
-    const occupees = new Set();   // cellules cumulées, croissant d'un cliché au suivant
-    let iPoint = 0;
-    let index = 0;
-    let aChange = false;
-    let contourPret = null;
+    // Dernière activité par cellule : c'est la base de la coloration.
+    const derniereActivite = new Map();
+    tous.forEach((p) => marquer(derniereActivite, p, origine, pasGrille));
+    cellulesTotal = derniereActivite.size;
 
-    for (const borne of bornes) {
-      while (iPoint < tous.length && tous[iPoint].ts <= borne) {
-        if (marquer(occupees, tous[iPoint], origine, pasGrille)) aChange = true;
-        iPoint++;
-      }
+    // Répartition des cellules par palier, puis une surface pleine par
+    // palier. Une cellule n'apparaît que dans un seul palier : les zones ne
+    // se superposent pas, chacune montre son propre état.
+    const parPalier = new Map();
+    derniereActivite.forEach((ts, k) => {
+      const age = (maintenant - ts) / HEURE;
+      const p = palierDe(age);
+      let ens = parPalier.get(p.id);
+      if (!ens) { ens = new Set(); parPalier.set(p.id, ens); }
+      ens.add(k);
+    });
 
-      if (!occupees.size) continue;   // rien encore détecté à ce stade
-
-      // Le contour ne se recalcule que si de nouvelles cellules sont
-      // apparues : deux clichés consécutifs sans détection partagent le même
-      // tracé, inutile de le refaire.
-      if (aChange || !contourPret) {
-        contourPret = contourDeCellules(occupees, origine, pasGrille, 5);
-        aChange = false;
-      }
-      if (!contourPret) continue;
-
-      index += 1;
-      const sourcesVues = new Set(tous.slice(0, iPoint).map((p) => p.capteur));
-      etapes.push({
-        snapshot_index: index,
-        // Borne haute réellement observée : l'horodatage de la dernière
-        // détection intégrée, pas la borne théorique de la tranche.
-        observed_until_utc: new Date(tous[Math.max(0, iPoint - 1)].ts).toISOString(),
-        borne,
-        detections_cumulees: iPoint,
-        cellules_cumulees: occupees.size,
-        sources: [...sourcesVues].sort().join(', '),
-        contour: contourPret,
+    // Ordre du plus ancien au plus récent : le front encore chaud se dessine
+    // par-dessus les zones éteintes.
+    PALIERS_AGE.slice().reverse().forEach((p) => {
+      const ens = parPalier.get(p.id);
+      if (!ens || !ens.size) return;
+      const surfaces = polygonesDeCellules(ens, origine, pasGrille, 5);
+      if (!surfaces) return;
+      zones.push({
+        palier: p.id,
+        libelle: p.libelle,
+        couleur: p.couleur,
+        cellules: ens.size,
+        // Surface au sol : chaque cellule fait PAS_M × PAS_M.
+        surfaceKm2: Math.round(ens.size * (PAS_M / 1000) * (PAS_M / 1000) * 100) / 100,
+        surfaces,
       });
-    }
+    });
   } catch (e) {
-    res.status(200).json({ ok: false, raison: 'calcul des contours échoué : ' + e.message });
+    res.status(200).json({ ok: false, raison: 'calcul des zones échoué : ' + e.message });
     return;
   }
 
@@ -284,12 +293,13 @@ module.exports = async (req, res) => {
   const sortie = {
     ok: true,
     source: 'NASA FIRMS · VIIRS + MODIS + Landsat',
-    produit: 'cumulative_active_fire_detection_extent',
+    produit: 'last_activity_state',
     depuis: DEPART_FEU,
-    pasHeures: SNAPSHOT_HEURES,
     pasGrilleM: PAS_M,
     detections: tous.length,
-    etapes,
+    cellules: cellulesTotal,
+    paliers: PALIERS_AGE.map((p) => ({ id: p.id, libelle: p.libelle, couleur: p.couleur })),
+    zones,
     actifs,
   };
 
