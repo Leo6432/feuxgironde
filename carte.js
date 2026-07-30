@@ -271,92 +271,173 @@
       });
     }
 
-    // Contour net par cliché figé (voir /api/perimetre) : un vrai polygone
-    // Leaflet, recalculé côté serveur pour l'instant choisi — pas une
-    // animation continue minute par minute.
-    var calqueContour = null;
-    var marqueursActifs = [];
+    // ── Emprises cumulées (voir /api/perimetre) ──────────────────────────
+    // Toutes les étapes sont tracées EN MÊME TEMPS, superposées : c'est leur
+    // emboîtement qui dessine la progression, chaque trait marquant l'étendue
+    // atteinte à une date. Rendu repris de leur carte : dégradé jaune →
+    // orange → rouge selon l'ancienneté, anciennes étapes en pointillés
+    // estompés, dernière limite en rouge plein et renforcée.
 
-    function viderCliche() {
-      if (calqueContour) { carte.removeLayer(calqueContour); calqueContour = null; }
-      marqueursActifs.forEach(function (m) { carte.removeLayer(m); });
-      marqueursActifs = [];
+    function interpolerRvb(a, b, t) {
+      var k = Math.max(0, Math.min(1, t));
+      return 'rgb(' +
+        Math.round(a[0] + (b[0] - a[0]) * k) + ',' +
+        Math.round(a[1] + (b[1] - a[1]) * k) + ',' +
+        Math.round(a[2] + (b[2] - a[2]) * k) + ')';
     }
 
-    function afficherCliche(d, recentrer) {
-      viderCliche();
-      if (d.contour) {
-        calqueContour = L.geoJSON(d.contour, {
-          style: { color: '#B89E3F', weight: 1.5, fillColor: '#E8DDB0', fillOpacity: 0.55 },
+    function couleurEmprise(progres) {
+      if (progres <= 0.55) return interpolerRvb([255, 211, 94], [255, 126, 43], progres / 0.55);
+      return interpolerRvb([255, 126, 43], [215, 25, 28], (progres - 0.55) / 0.45);
+    }
+
+    // Lissage de Chaikin : purement visuel, il arrondit l'escalier laissé par
+    // la grille de détection sans déplacer la limite calculée de plus d'un
+    // quart de segment.
+    function ligneEstFermee(c) {
+      if (!c || c.length < 4) return false;
+      var p = c[0], d = c[c.length - 1];
+      return Math.abs(p[0] - d[0]) < 1e-8 && Math.abs(p[1] - d[1]) < 1e-8;
+    }
+
+    function lisser(coords) {
+      if (!Array.isArray(coords) || coords.length < 4) return coords;
+      var fermee = ligneEstFermee(coords);
+      var pts = fermee ? coords.slice(0, -1) : coords;
+      var out = [];
+      if (!fermee) out.push(pts[0]);
+      for (var i = 0; i < pts.length - (fermee ? 0 : 1); i++) {
+        var a = pts[i], b = pts[(i + 1) % pts.length];
+        out.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25]);
+        out.push([a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+      }
+      if (fermee) out.push(out[0]);
+      else out.push(pts[pts.length - 1]);
+      return out;
+    }
+
+    function lisserGeometrie(g) {
+      if (g.type === 'LineString') {
+        return { type: 'LineString', coordinates: lisser(g.coordinates) };
+      }
+      return { type: 'MultiLineString', coordinates: g.coordinates.map(lisser) };
+    }
+
+    // Les lignes fermées d'une étape délimitent aussi une surface : on la
+    // remplit discrètement pour la dernière étape seulement, afin que
+    // l'emprise actuelle se lise d'un coup d'œil sans noyer les anneaux.
+    function lignesEnPolygones(g) {
+      var lignes = g.type === 'LineString' ? [g.coordinates] : g.coordinates;
+      var anneaux = lignes.filter(function (l) { return l.length >= 4; });
+      if (!anneaux.length) return null;
+      return { type: 'MultiPolygon', coordinates: anneaux.map(function (a) { return [a]; }) };
+    }
+
+    function afficherEmprises(d) {
+      var etapes = (d.etapes || []).filter(function (e) { return e && e.contour; });
+      if (!etapes.length) return null;
+
+      var derniere = etapes[etapes.length - 1];
+      var maxIndex = derniere.snapshot_index;
+
+      // Remplissage de l'emprise actuelle, sous les traits.
+      var polys = lignesEnPolygones(derniere.contour);
+      if (polys) {
+        L.geoJSON(polys, {
+          style: { stroke: false, fillColor: '#E8DDB0', fillOpacity: 0.42 },
           interactive: false,
         }).addTo(carte);
-        if (recentrer) {
-          try { carte.fitBounds(calqueContour.getBounds().pad(0.15)); } catch (e) { /* forme vide, tant pis */ }
-        }
       }
 
+      var groupe = L.geoJSON({
+        type: 'FeatureCollection',
+        features: etapes.map(function (e) {
+          var progres = maxIndex > 1 ? (e.snapshot_index - 1) / (maxIndex - 1) : 1;
+          return {
+            type: 'Feature',
+            geometry: lisserGeometrie(e.contour),
+            properties: {
+              progres: progres,
+              dernier: e.snapshot_index === maxIndex,
+              observed_until_utc: e.observed_until_utc,
+              detections: e.detections_cumulees,
+              sources: e.sources,
+            },
+          };
+        }),
+      }, {
+        smoothFactor: 1.7,
+        style: function (f) {
+          var p = f.properties;
+          return {
+            color: p.dernier ? '#d7191c' : couleurEmprise(p.progres),
+            weight: p.dernier ? 3.0 : 1.0 + 0.8 * p.progres,
+            opacity: p.dernier ? 0.95 : 0.16 + 0.34 * p.progres,
+            dashArray: p.dernier ? null : '2 6',
+            lineCap: 'round',
+            lineJoin: 'round',
+            fill: false,
+          };
+        },
+        onEachFeature: function (f, couche) {
+          var p = f.properties;
+          var quand = new Date(p.observed_until_utc).getTime();
+          couche.bindTooltip(
+            (p.dernier ? '<b>Dernière limite détectée</b>' : '<b>Étape cumulative</b>') +
+            '<br>Observations jusqu’au ' + (isFinite(quand) ? heureFr(quand) : '—') +
+            '<br>' + p.detections + ' détections cumulées' +
+            '<br><small>Ni surface brûlée ni front continu.</small>',
+            { sticky: true, opacity: 0.96 }
+          );
+        },
+      }).addTo(carte);
+
+      try { carte.fitBounds(groupe.getBounds().pad(0.12)); } catch (e) { /* forme vide */ }
+
+      var etiquette = document.getElementById('fg-time-label');
+      if (etiquette) {
+        var quand = new Date(derniere.observed_until_utc).getTime();
+        etiquette.textContent = etapes.length + ' étapes · dernière limite ' +
+          (isFinite(quand) ? heureFr(quand) : '—');
+      }
+      var blocTemps = document.getElementById('fg-time');
+      if (blocTemps) blocTemps.removeAttribute('hidden');
+
+      return derniere;
+    }
+
+    function afficherFoyersActifs(actifs) {
       var frpMax = 0, derniereTs = 0, frpActif = 0;
-      (d.actifs || []).forEach(function (a) {
+      (actifs || []).forEach(function (a) {
         var lat = +a[0], lon = +a[1], frp = +a[2] || 0, ts = +a[3];
         if (!isFinite(lat) || !isFinite(lon)) return;
         if (frp > frpMax) frpMax = frp;
         frpActif += frp;
         if (ts > derniereTs) derniereTs = ts;
-        var m = L.circleMarker([lat, lon], {
-          radius: 5, weight: 1, color: '#7a4a12',
-          fillColor: COULEURS_ACTIF[classeFrp(frp)], fillOpacity: 0.9,
+        L.circleMarker([lat, lon], {
+          radius: 4, weight: 1, color: '#7a2712',
+          fillColor: COULEURS_ACTIF[classeFrp(frp)], fillOpacity: 0.92,
         })
           .bindPopup(
             '<strong>' + (frp ? '≈ ' + Math.round(frp) + ' MW' : 'puissance inconnue') + '</strong><br>' +
             (isFinite(ts) ? 'détecté ' + heureFr(ts) : '')
           )
           .addTo(carte);
-        marqueursActifs.push(m);
       });
-
-      var nbActifs = (d.actifs || []).length;
-      var etiquette = document.getElementById('fg-time-label');
-      if (etiquette) {
-        etiquette.textContent = heureFr(d.instant) + ' — ' +
-          (nbActifs
-            ? nbActifs + ' foyer' + (nbActifs > 1 ? 's' : '') + ' actif' + (nbActifs > 1 ? 's' : '') + ', ≈ ' + Math.round(frpActif) + ' MW'
-            : 'aucun foyer actif');
-      }
-      chiffres(nbActifs, frpMax, derniereTs ? heureFr(derniereTs) : '—');
+      return { nb: (actifs || []).length, frpMax: frpMax, derniereTs: derniereTs };
     }
 
-    function chargerCliche(instant, recentrer) {
-      var url = '/api/perimetre' + (instant ? ('?instant=' + instant) : '');
-      return fetch(url)
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d && d.ok) afficherCliche(d, recentrer);
-          return d;
-        });
-    }
-
-    var selectTemps = document.getElementById('fg-time-select');
-    var blocTemps = document.getElementById('fg-time');
-
-    chargerCliche(null, true)
+    fetch('/api/perimetre')
+      .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d || !d.ok) { echec('Contour du feu indisponible pour le moment.'); return; }
-        if (selectTemps && blocTemps && d.snapshots && d.snapshots.length) {
-          selectTemps.innerHTML = d.snapshots.map(function (t, i) {
-            var dernier = i === d.snapshots.length - 1;
-            var libelle = heureFr(t) + (dernier ? ' (le plus récent)' : '');
-            return '<option value="' + t + '"' + (dernier ? ' selected' : '') + '>' + libelle + '</option>';
-          }).join('');
-          blocTemps.removeAttribute('hidden');
-          selectTemps.addEventListener('change', function () {
-            chargerCliche(+selectTemps.value, false)
-              .catch(function () { echec('Contour du feu indisponible pour le moment.'); });
-          });
-        }
+        if (!d || !d.ok) { echec('Emprises satellite indisponibles pour le moment.'); return; }
+        afficherEmprises(d);
+        var bilan = afficherFoyersActifs(d.actifs);
+        chiffres(bilan.nb, bilan.frpMax, bilan.derniereTs ? heureFr(bilan.derniereTs) : '—');
       })
       .catch(function (e) {
         if (window.console && console.error) console.error(e);
-        echec('Contour du feu indisponible pour le moment.');
+        echec('Emprises satellite indisponibles pour le moment.');
       });
 
     // Note générale, prochain passage, planning des passages et autres

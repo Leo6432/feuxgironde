@@ -1,19 +1,23 @@
-// Contour net du feu de Saumos, par cliché figé — même principe que le
-// pipeline (Python, hors ligne) du site
-// nicolaslecorvec.github.io/fumees-nouvelle_aquitaine : transformer chaque
-// détection FIRMS en petit cercle réaliste (rayon proche du pixel du
-// capteur), puis fusionner tous ces cercles en une vraie forme géométrique
-// (union de polygones), au lieu de peindre des points flous sur un canvas.
+// Emprises cumulées des détections FIRMS autour de Saumos, en lignes de
+// contour successives — reprise fidèle du produit
+// `cumulative_detection_envelopes` du dépôt
+// github.com/nicolaslecorvec/fumees-nouvelle_aquitaine
+// (pipeline/scripts/03_cumulative_detection_envelopes.py).
 //
-// Différence assumée avec ce site : ici, le calcul se fait à la demande
-// (fonction serverless), pas dans un pipeline Python programmé à l'avance —
-// donc mis en cache par tranche de 6h (comme leur SNAPSHOT_STEP_HOURS), avec
-// un cache long pour les tranches déjà passées (elles ne changent plus) et
-// court pour la tranche en cours (encore susceptible de nouvelles
-// détections).
+// Principe, tel qu'il est appliqué là-bas :
+//   — un cliché toutes les 6 heures (SNAPSHOT_STEP_HOURS) ;
+//   — à chaque cliché, l'union CUMULATIVE de petits cercles posés sous chaque
+//     détection depuis le départ du feu (empreinte prudente du pixel) ;
+//   — export non pas des surfaces pleines, mais de leurs FRONTIÈRES, en
+//     LineString / MultiLineString : superposées, elles dessinent des anneaux
+//     emboîtés qui retracent la progression, chaque trait étant une étape.
 //
-// ?instant=<epoch ms> : borne haute du cliché (cumul de tout ce qui a été
-// détecté jusqu'à cet instant). Sans paramètre : dernière tranche connue.
+// Ce n'est ni un périmètre brûlé officiel, ni un front de flammes continu :
+// juste l'étendue cumulée de ce que les satellites ont vu chaud.
+//
+// Différence d'exécution assumée : leur pipeline tourne hors ligne (Python,
+// geopandas/shapely) et publie un fichier figé ; ici tout est calculé à la
+// demande puis mis en cache, faute de pipeline programmé.
 
 const { getClient } = require('../lib/redis');
 
@@ -24,37 +28,25 @@ const RAYON_KM = 34;
 
 const JOURS_MAX = 10;
 const DEPART_FEU = '2026-07-22';
-const SNAPSHOT_HEURES = 6;
-const FENETRE_ACTIVE_H = 6;   // même fenêtre que carte.js, pour les foyers "encore actifs"
+const SNAPSHOT_HEURES = 6;      // SNAPSHOT_STEP_HOURS chez eux
+const FENETRE_ACTIVE_H = 6;
+
+// Empreinte circulaire prudente autour du centre du pixel — eux distinguent
+// VIIRS (300 m) et MODIS (750 m) ; on prend une valeur intermédiaire unique,
+// l'agrégation par grille ne conservant pas le capteur d'origine.
+const RAYON_CERCLE_KM = 0.32;
+
+const CAPTEURS = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT', 'MODIS_NRT', 'LANDSAT_NRT'];
+
+// Plafond de sécurité : au-delà, la grille de regroupement s'élargit plutôt
+// que de laisser la fusion de polygones s'emballer.
+const MAX_POINTS_UNION = 2500;
 
 function joursDepuisDepart() {
   const debut = new Date(DEPART_FEU + 'T00:00:00Z');
   const ecoules = Math.ceil((Date.now() - debut.getTime()) / 86400000) + 1;
   return Math.min(JOURS_MAX, Math.max(1, ecoules));
 }
-
-// Liste des instants de cliché (toutes les 6h depuis le départ du feu,
-// jusqu'à maintenant inclus) — sert à la fois à borner les requêtes et à
-// fournir au client de quoi construire son sélecteur, sans dupliquer cette
-// logique côté navigateur.
-function snapshots() {
-  const HEURE = 3600000;
-  const debut = new Date(DEPART_FEU + 'T00:00:00Z').getTime();
-  const pas = SNAPSHOT_HEURES * HEURE;
-  const maintenant = Date.now();
-  const liste = [];
-  for (let t = debut + pas; t <= maintenant; t += pas) liste.push(t);
-  if (!liste.length || liste[liste.length - 1] < maintenant - 5 * 60000) liste.push(maintenant);
-  return liste;
-}
-
-const CAPTEURS = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT', 'MODIS_NRT', 'LANDSAT_NRT'];
-
-// Rayon du petit cercle posé sous chaque détection avant fusion — une
-// approximation prudente de l'empreinte réelle du pixel au sol (~375 m pour
-// VIIRS, ~1 km pour MODIS) : on prend une valeur unique raisonnable plutôt
-// que de suivre le capteur d'origine à travers l'agrégation par grille.
-const RAYON_CERCLE_KM = 0.32;
 
 function distanceKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -65,11 +57,11 @@ function distanceKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function tsUtc(date, heure) {
-  const hm = String(heure || '0h0').split('h');
+function tsUtc(date, heureBrute) {
+  const hhmm = String(heureBrute || '0').padStart(4, '0');
   return Date.UTC(
     +date.slice(0, 4), +date.slice(5, 7) - 1, +date.slice(8, 10),
-    +hm[0] || 0, +hm[1] || 0
+    +hhmm.slice(0, 2), +hhmm.slice(2, 4)
   );
 }
 
@@ -79,9 +71,9 @@ function parseCsv(texte) {
   const entetes = lignes[0].split(',').map((c) => c.trim());
   return lignes.slice(1).map((ligne) => {
     const valeurs = ligne.split(',');
-    const ligneObj = {};
-    entetes.forEach((c, i) => { ligneObj[c] = valeurs[i]; });
-    return ligneObj;
+    const o = {};
+    entetes.forEach((c, i) => { o[c] = valeurs[i]; });
+    return o;
   });
 }
 
@@ -129,13 +121,13 @@ async function recuperer(capteur, cle, jours, dateDebut) {
     lat: parseFloat(l.latitude),
     lon: parseFloat(l.longitude),
     frp: parseFloat(l.frp) || 0,
-    ts: tsUtc(l.acq_date, (l.acq_time || '').padStart(4, '0').replace(/(\d{2})(\d{2})/, '$1h$2')),
+    ts: tsUtc(l.acq_date, l.acq_time),
+    capteur,
   }));
 }
 
-// Point d'entrée ESM chargé une seule fois (turf est distribué en modules
-// ESM purs — un require() classique plante au chargement, voir la même
-// mésaventure rencontrée avec netcdfjs).
+// turf est distribué en modules ESM purs : un require() plante au chargement
+// sur l'environnement Node de Vercel (même mésaventure qu'avec netcdfjs).
 let turfPromise = null;
 function chargerTurf() {
   if (!turfPromise) {
@@ -155,41 +147,58 @@ function chargerTurf() {
   return turfPromise;
 }
 
-// Au-delà, la fusion de polygones devient trop lourde pour une fonction à la
-// demande : on regroupe d'abord sur une grille plus large pour rester sous
-// ce plafond, quitte à perdre un peu de détail plutôt que de risquer un
-// calcul de plusieurs dizaines de secondes.
-const MAX_POINTS_UNION = 2500;
-
-function fusionner(points, turf) {
-  function regrouper(grille) {
-    const cellules = new Map();
-    points.forEach((p) => {
-      const la = Math.round(p.lat / grille) * grille;
-      const lo = Math.round(p.lon / grille) * grille;
-      cellules.set(la.toFixed(4) + '_' + lo.toFixed(4), { lat: +la.toFixed(4), lon: +lo.toFixed(4) });
+// Frontières d'un polygone/multipolygone → LineString ou MultiLineString.
+// C'est ce que leur pipeline exporte : des lignes, pas des surfaces pleines,
+// pour que les étapes successives se superposent en anneaux lisibles.
+function contourEnLignes(geometrie) {
+  const polygones = geometrie.type === 'Polygon'
+    ? [geometrie.coordinates]
+    : geometrie.coordinates;
+  const lignes = [];
+  polygones.forEach((anneaux) => {
+    (anneaux || []).forEach((anneau) => {
+      if (Array.isArray(anneau) && anneau.length >= 2) lignes.push(anneau);
     });
-    return [...cellules.values()];
-  }
+  });
+  if (!lignes.length) return null;
+  if (lignes.length === 1) return { type: 'LineString', coordinates: lignes[0] };
+  return { type: 'MultiLineString', coordinates: lignes };
+}
 
+function arrondirLignes(geometrie, decimales) {
+  const f = Math.pow(10, decimales);
+  const arr = (c) => [Math.round(c[0] * f) / f, Math.round(c[1] * f) / f];
+  if (geometrie.type === 'LineString') {
+    return { type: 'LineString', coordinates: geometrie.coordinates.map(arr) };
+  }
+  return {
+    type: 'MultiLineString',
+    coordinates: geometrie.coordinates.map((l) => l.map(arr)),
+  };
+}
+
+// Regroupement sur grille : dédoublonne les détections répétées d'un même
+// foyer par plusieurs passages, et borne le coût de la fusion.
+function cellulesDe(points, grille) {
+  const vues = new Map();
+  points.forEach((p) => {
+    const la = Math.round(p.lat / grille) * grille;
+    const lo = Math.round(p.lon / grille) * grille;
+    vues.set(la.toFixed(4) + '_' + lo.toFixed(4), [+lo.toFixed(4), +la.toFixed(4)]);
+  });
+  return [...vues.values()];
+}
+
+function grilleAdaptee(points) {
   let grille = 0.0025;
-  let cellules = regrouper(grille);
-  while (cellules.length > MAX_POINTS_UNION && grille < 0.02) {
+  while (cellulesDe(points, grille).length > MAX_POINTS_UNION && grille < 0.02) {
     grille *= 1.5;
-    cellules = regrouper(grille);
   }
-  if (cellules.length > MAX_POINTS_UNION) cellules = cellules.slice(0, MAX_POINTS_UNION);
-
-  const cercles = cellules.map((c) =>
-    turf.buffer(turf.point([c.lon, c.lat]), RAYON_CERCLE_KM, { units: 'kilometers', steps: 6 })
-  );
-  const fusion = turf.union(turf.featureCollection(cercles));
-  const simplifie = turf.simplify(fusion, { tolerance: 0.0003, highQuality: false });
-  return { geometrie: simplifie.geometry, cellules: cellules.length, grille };
+  return grille;
 }
 
 module.exports = async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');   // le cache se gère nous-mêmes, par tranche
+  res.setHeader('Cache-Control', 's-maxage=1200, stale-while-revalidate=3600');
 
   const cle = process.env.FIRMS_MAP_KEY;
   if (!cle) {
@@ -197,23 +206,7 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const listeSnapshots = snapshots();
-  const maintenant = Date.now();
-
-  let instant = maintenant;
-  try {
-    const url = new URL(req.url, 'http://x');
-    const brut = Number(url.searchParams.get('instant'));
-    if (isFinite(brut) && brut > 0) instant = brut;
-  } catch (e) { /* instant reste "maintenant" */ }
-
-  // Cliché déjà entièrement passé (marge de sécurité : au-delà de la fenêtre
-  // active, plus aucune nouvelle détection ne peut le faire bouger) : cache
-  // longtemps. Le cliché le plus récent reste encore susceptible de
-  // recevoir nos détections au fil des passages satellite : cache court.
-  const estFige = instant < maintenant - (FENETRE_ACTIVE_H + 2) * 3600000;
-  const cleCache = 'perimetre:v3:' + instant;
-
+  const cleCache = 'perimetre:v4';
   let redis = null;
   try {
     const p = getClient();
@@ -247,51 +240,118 @@ module.exports = async (req, res) => {
       ok: false,
       raison: 'API FIRMS injoignable',
       details: resultats.map((r) => r.err),
-      snapshots: listeSnapshots,
     });
     return;
   }
 
-  const tousLesPoints = ok.flatMap((r) => r.pts)
-    .filter((p) => distanceKm(LAT, LON, p.lat, p.lon) <= RAYON_KM);
+  const tous = ok.flatMap((r) => r.pts)
+    .filter((p) => isFinite(p.lat) && isFinite(p.lon) && isFinite(p.ts))
+    .filter((p) => distanceKm(LAT, LON, p.lat, p.lon) <= RAYON_KM)
+    .sort((a, b) => a.ts - b.ts);
 
-  // Cumul : tout ce qui a été détecté jusqu'à l'instant du cliché.
-  const points = tousLesPoints.filter((p) => p.ts <= instant);
-  // Encore "actif" à cet instant : détecté dans les FENETRE_ACTIVE_H
-  // dernières heures avant le cliché — rendu à part (petits points colorés
-  // par puissance), pas fondu dans le contour cumulé.
-  const actifs = points
-    .filter((p) => instant - p.ts <= FENETRE_ACTIVE_H * 3600000)
-    .map((p) => [p.lat, p.lon, Math.round(p.frp), p.ts]);
-
-  if (!points.length) {
-    const vide = { ok: true, contour: null, points: 0, actifs: [], instant, snapshots: listeSnapshots };
-    res.status(200).json(vide);
+  if (!tous.length) {
+    res.status(200).json({ ok: true, etapes: [], actifs: [] });
     return;
   }
 
-  let sortie;
+  const HEURE = 3600000;
+  const pas = SNAPSHOT_HEURES * HEURE;
+  const debutFeu = new Date(DEPART_FEU + 'T00:00:00Z').getTime();
+  const maintenant = Date.now();
+
+  // Bornes des clichés : toutes les 6 h, en ne gardant que celles où quelque
+  // chose a effectivement été détecté (inutile de publier une étape vide).
+  const bornes = [];
+  for (let t = debutFeu + pas; t <= maintenant + pas; t += pas) {
+    bornes.push(Math.min(t, maintenant));
+    if (t >= maintenant) break;
+  }
+
+  const grille = grilleAdaptee(tous);
+
+  let etapes = [];
   try {
     const turf = await chargerTurf();
-    const { geometrie, cellules, grille } = fusionner(points, turf);
-    sortie = {
-      ok: true,
-      points: points.length,
-      cellules,
-      grille,
-      contour: geometrie,
-      actifs,
-      instant,
-      snapshots: listeSnapshots,
-    };
+    let cumul = null;          // union cumulative, accumulée d'un cliché au suivant
+    let dejaVues = new Set();  // cellules déjà intégrées au cumul
+    let iPoint = 0;
+    let index = 0;
+
+    for (const borne of bornes) {
+      // Points nouvellement arrivés dans cette tranche.
+      const nouveaux = [];
+      while (iPoint < tous.length && tous[iPoint].ts <= borne) {
+        nouveaux.push(tous[iPoint]);
+        iPoint++;
+      }
+
+      // Seules les cellules encore inconnues coûtent une fusion : c'est ce
+      // qui rend l'accumulation abordable à la demande (sinon il faudrait
+      // refondre l'intégralité des cercles à chaque cliché).
+      const aAjouter = cellulesDe(nouveaux, grille)
+        .filter((c) => {
+          const k = c[1].toFixed(4) + '_' + c[0].toFixed(4);
+          if (dejaVues.has(k)) return false;
+          dejaVues.add(k);
+          return true;
+        });
+
+      if (aAjouter.length) {
+        const cercles = aAjouter.map((c) =>
+          turf.buffer(turf.point(c), RAYON_CERCLE_KM, { units: 'kilometers', steps: 4 })
+        );
+        const lot = cercles.length === 1
+          ? cercles[0]
+          : turf.union(turf.featureCollection(cercles));
+        cumul = cumul ? turf.union(turf.featureCollection([cumul, lot])) : lot;
+        cumul = turf.simplify(cumul, { tolerance: 0.0002, highQuality: false });
+      }
+
+      if (!cumul) continue;   // rien encore détecté à ce stade
+
+      const lignes = contourEnLignes(cumul.geometry);
+      if (!lignes) continue;
+
+      index += 1;
+      const sourcesVues = new Set(tous.slice(0, iPoint).map((p) => p.capteur));
+      etapes.push({
+        snapshot_index: index,
+        // Borne haute réellement observée : l'horodatage de la dernière
+        // détection intégrée, pas la borne théorique de la tranche.
+        observed_until_utc: new Date(tous[Math.max(0, iPoint - 1)].ts).toISOString(),
+        borne,
+        detections_cumulees: iPoint,
+        cellules_cumulees: dejaVues.size,
+        sources: [...sourcesVues].sort().join(', '),
+        contour: arrondirLignes(lignes, 5),
+      });
+    }
   } catch (e) {
-    res.status(200).json({ ok: false, raison: 'fusion des contours échouée : ' + e.message, snapshots: listeSnapshots });
+    res.status(200).json({ ok: false, raison: 'fusion des contours échouée : ' + e.message });
     return;
   }
 
+  // Foyers encore chauds dans les dernières heures : rendus à part, en
+  // points colorés par puissance, comme la couche « foyers actuels » de leur
+  // carte — le contour, lui, ne dit pas ce qui brûle encore.
+  const actifs = tous
+    .filter((p) => maintenant - p.ts <= FENETRE_ACTIVE_H * HEURE)
+    .map((p) => [+p.lat.toFixed(5), +p.lon.toFixed(5), Math.round(p.frp), p.ts]);
+
+  const sortie = {
+    ok: true,
+    source: 'NASA FIRMS · VIIRS + MODIS + Landsat',
+    produit: 'cumulative_active_fire_detection_extent',
+    depuis: DEPART_FEU,
+    pasHeures: SNAPSHOT_HEURES,
+    grille,
+    detections: tous.length,
+    etapes,
+    actifs,
+  };
+
   if (redis) {
-    const duree = estFige ? 30 * 86400 : 1200;
-    try { await redis.set(cleCache, JSON.stringify(sortie), { EX: duree }); } catch (e) { /* tant pis */ }
+    try { await redis.set(cleCache, JSON.stringify(sortie), { EX: 1200 }); } catch (e) { /* tant pis */ }
   }
 
   res.setHeader('X-Cache', redis ? 'miss' : 'none');

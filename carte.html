@@ -51,8 +51,8 @@
 
 <div class="container page-head">
   <span class="kicker">Données NASA FIRMS · satellites VIIRS</span>
-  <h1>Le feu heure par heure</h1>
-  <p class="measure">En <strong style="color:#B89E3F">sable</strong>, la zone déjà brûlée ; en <strong style="color:#CE1B26">orange et rouge</strong>, les foyers encore actifs à l’heure choisie. Déplacez le curseur pour rejouer l’incendie depuis son départ, ou cliquez sur une zone pour son détail. Un satellite ne passe que quelques fois par jour — <strong>l’absence de détection ne veut pas dire l’absence de feu</strong>. Toutes les heures sont en heure française. Ce n’est ni le périmètre officiel de l’incendie, ni une carte des secours.</p>
+  <h1>La progression du feu</h1>
+  <p class="measure">Chaque trait est une <strong>étape de la progression</strong>, tracée toutes les 6 heures : l’étendue cumulée de ce que les satellites ont vu chaud depuis le départ du feu. Les étapes anciennes sont estompées, la <strong style="color:#CE1B26">dernière limite</strong> est renforcée ; les points colorés sont les foyers encore actifs. Survolez un trait pour sa date. Un satellite ne passe que quelques fois par jour — <strong>l’absence de détection ne veut pas dire l’absence de feu</strong>. Toutes les heures sont en heure française. Ce n’est ni le périmètre officiel de l’incendie, ni un front de flammes continu, ni une carte des secours.</p>
 </div>
 
 <section class="section" style="padding-top:0">
@@ -64,15 +64,17 @@
 
     <div class="time-bar" id="fg-time" hidden>
       <div class="time-head">
-        <label for="fg-time-select">Cliché du contour — par tranche de 6 heures</label>
-        <output id="fg-time-label" for="fg-time-select"></output>
+        <label>Emprises cumulées détectées</label>
+        <output id="fg-time-label"></output>
       </div>
-      <select id="fg-time-select"></select>
-      <p class="p-note" style="margin-top:6px">Le contour est recalculé pour chaque tranche (union des détections cumulées jusqu'à cet instant), comme une carte figée — pas une animation continue.</p>
+      <div style="height:10px;border-radius:5px;background:linear-gradient(90deg,#ffd35e,#ff7e2b,#d7191c)"></div>
+      <div class="time-ends"><span>étapes anciennes</span><span>dernière limite</span></div>
+      <p class="p-note" style="margin-top:6px">Chaque trait est une étape de la progression, tracée toutes les 6 heures : l’union cumulée de ce que les satellites ont vu chaud depuis le départ du feu. Les étapes anciennes sont estompées, la dernière limite est renforcée. <strong>Ce n’est ni une surface brûlée officielle, ni un front de flammes continu.</strong></p>
     </div>
 
     <div class="map-legend">
-      <span><i style="background:#E8DDB0"></i> Zone brûlée (plus pâle = éteinte depuis plus longtemps)</span>
+      <span><i style="background:#E8DDB0"></i> Emprise cumulée détectée</span>
+      <span><i style="background:#d7191c"></i> Dernière limite détectée</span>
       <span><i style="background:#F0C441"></i> Foyer actif &lt; 10 MW</span>
       <span><i style="background:#EE8A17"></i> 10–30 MW</span>
       <span><i style="background:#D8232E"></i> ≥ 30 MW</span>
