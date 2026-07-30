@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Carte satellite des foyers actifs — Feux Gironde</title>
-<meta name="description" content="Carte en direct des foyers actifs détectés par satellite autour de l'incendie de Saumos en Gironde, d'après les données NASA FIRMS (VIIRS).">
+<title>Carte satellite des feux en France — Feux Gironde</title>
+<meta name="description" content="Carte en direct des feux détectés par satellite en France, incendie de Saumos compris, d'après les données NASA FIRMS (VIIRS, MODIS, Landsat).">
 <meta name="robots" content="index, follow, max-image-preview:large">
 <meta name="theme-color" content="#1B2A6B">
 <link rel="canonical" href="https://feuxgironde.vercel.app/carte.html">
@@ -17,8 +17,8 @@
 <meta property="og:site_name" content="Feux Gironde">
 <meta property="og:locale" content="fr_FR">
 <meta property="og:url" content="https://feuxgironde.vercel.app/carte.html">
-<meta property="og:title" content="Carte satellite des foyers actifs — Feux Gironde">
-<meta property="og:description" content="Les foyers encore chauds détectés par les satellites VIIRS autour de Saumos, mis à jour en continu.">
+<meta property="og:title" content="Carte satellite des feux en France — Feux Gironde">
+<meta property="og:description" content="Les feux encore chauds détectés par satellite partout en France, mis à jour en continu.">
 <meta property="og:image" content="https://feuxgironde.vercel.app/og-image-3.jpg">
 <meta property="og:image:alt" content="Feux Gironde : 42 000 hectares brûlés, feu stabilisé mais pas fixé, avec la courbe de progression depuis le 22 juillet 2026.">
 <meta name="twitter:card" content="summary_large_image">
@@ -50,9 +50,9 @@
 </header>
 
 <div class="container page-head">
-  <span class="kicker">Données NASA FIRMS · satellites VIIRS</span>
-  <h1>La progression du feu, heure par heure</h1>
-  <p class="measure">La carte montre, pour chaque portion de terrain, <strong>depuis combien de temps un satellite ne l’a plus vue chaude</strong> : du <strong style="color:#CE1B26">rouge</strong> (encore actif) au beige pâle (éteint depuis plus de 40 heures). <strong>Déplacez le curseur</strong> pour remonter jusqu’au départ du feu, ou lancez la lecture. Les bords en escalier correspondent à la résolution des pixels satellite — ce ne sont pas des contours lissés. Un satellite ne passe que quelques fois par jour : <strong>l’absence de détection ne veut pas dire l’absence de feu</strong>. Heures françaises. Ce n’est ni le périmètre officiel de l’incendie, ni un front de flammes continu, ni une carte des secours.</p>
+  <span class="kicker">Données NASA FIRMS · toute la France</span>
+  <h1>Les feux en France, heure par heure</h1>
+  <p class="measure">La carte couvre <strong>toute la France métropolitaine et la Corse</strong>, incendie de Saumos compris. Pour chaque portion de terrain, elle montre <strong>depuis combien de temps un satellite ne l’a plus vue chaude</strong> : du <strong style="color:#CE1B26">rouge</strong> (encore actif) au beige pâle (éteint depuis plus de 40 heures). <strong>Déplacez le curseur</strong> pour remonter dans le temps, ou lancez la lecture. Les bords en escalier correspondent à la résolution des pixels satellite — ce ne sont pas des contours lissés. Un satellite ne passe que quelques fois par jour : <strong>l’absence de détection ne veut pas dire l’absence de feu</strong>. Heures françaises. Ce n’est ni un périmètre officiel, ni un front de flammes continu, ni une carte des secours.</p>
 </div>
 
 <section class="section" style="padding-top:0">
@@ -60,7 +60,7 @@
 
     <p id="fg-carte-note" class="live-note stale">Chargement des détections satellite…</p>
 
-    <div id="fg-map" class="map-shell" role="img" aria-label="Carte des foyers actifs détectés par satellite autour de Saumos"></div>
+    <div id="fg-map" class="map-shell" role="img" aria-label="Carte des feux détectés par satellite en France"></div>
 
     <div class="time-bar" id="fg-time" hidden>
       <div class="time-head">
@@ -76,16 +76,9 @@
       <p class="p-note" style="margin-top:8px">Chaque zone est colorée selon le temps écoulé, <strong>à la date choisie</strong>, depuis la dernière fois qu’un satellite l’a vue chaude : rouge là où ça brûlait encore, beige pâle là où plus rien n’avait été détecté depuis plus de 40 heures. Survolez une zone pour sa surface. <strong>Ce n’est ni une surface brûlée officielle, ni un front de flammes continu.</strong></p>
     </div>
 
-    <div class="map-legend">
-      <span><i style="background:#F0C441"></i> Foyer actif &lt; 10 MW</span>
-      <span><i style="background:#EE8A17"></i> 10–30 MW</span>
-      <span><i style="background:#D8232E"></i> ≥ 30 MW</span>
-      <span><i style="background:#EE8A17"></i> Autre feu en France (24 h)</span>
-    </div>
-
     <div class="marks" style="margin-top:28px">
       <div class="mark">
-        <div class="mark-k">Foyers actifs (6 h avant la date choisie)</div>
+        <div class="mark-k">Détections actives (6 h avant la date choisie)</div>
         <div class="mark-v" id="fg-carte-total">—</div>
       </div>
       <div class="mark">
@@ -105,7 +98,7 @@
 
     <div id="fg-planning" hidden style="margin-top:28px">
       <h3 style="font-family:'Archivo',sans-serif;font-weight:600;font-size:16px;margin-bottom:4px">Passages observés dans la journée</h3>
-      <p class="p-note" style="margin-bottom:14px">Horaires réels des passages satellite au-dessus de Saumos, déduits des détections des derniers jours (VIIRS SNPP/NOAA-20/NOAA-21, MODIS Terra/Aqua, Landsat) — pas une prévision, une habitude observée.</p>
+      <p class="p-note" style="margin-bottom:14px">Horaires réels des passages satellite au-dessus de la Gironde, déduits des détections des derniers jours (VIIRS SNPP/NOAA-20/NOAA-21, MODIS Terra/Aqua, Landsat) — pas une prévision, une habitude observée.</p>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Heure (française)</th><th>Satellite</th></tr></thead>

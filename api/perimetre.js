@@ -1,5 +1,5 @@
-// État d'activité du feu de Saumos, cellule par cellule — reprise du produit
-// `last_activity_state` du dépôt
+// État d'activité des feux de France, cellule par cellule — reprise du
+// produit `last_activity_state` du dépôt
 // github.com/nicolaslecorvec/fumees-nouvelle_aquitaine.
 //
 // Principe :
@@ -18,6 +18,11 @@
 // pas, chacune montre l'état réel de sa portion de terrain. Les bords en
 // escalier viennent de la grille — ce sont de vrais pixels, pas des arrondis.
 //
+// Couverture : la France métropolitaine et la Corse. Une grille unique à 40 m
+// sur tout le pays ferait 625 millions de cellules ; les détections sont donc
+// regroupées en foyers, chacun calculé sur sa propre petite grille, et les
+// zones obtenues sont fusionnées par palier dans la réponse.
+//
 // Ce n'est ni un périmètre brûlé officiel, ni un front de flammes continu :
 // juste ce que les satellites ont vu chaud, et quand.
 //
@@ -26,12 +31,28 @@
 // demande puis mis en cache, faute de pipeline programmé.
 
 const { getClient } = require('../lib/redis');
+const { frontiereFrance, dansGeometrie } = require('../lib/france');
 const { pasEnDegres, celluleDe, creerGrille, polygonesDeCellules, PAS_M } = require('../lib/pixels');
 
-const LAT = 44.98;   // Saumos, Gironde
-const LON = -1.02;
-const BBOX = '-1.45,44.60,-0.55,45.35';
-const RAYON_KM = 34;
+// Latitude de référence pour le pas de grille en longitude : le milieu de la
+// France, pour que les cellules restent à peu près carrées du nord au sud.
+const LAT_REFERENCE = 46.5;
+
+// France métropolitaine et Corse, avec une petite marge. Les points sont
+// ensuite filtrés par le contour réel du pays (voir lib/france.js), sans quoi
+// des feux espagnols, italiens ou allemands entreraient dans la boîte.
+const BBOX = '-5.3,41.2,9.7,51.3';
+
+// Regroupement des détections en foyers distincts : une grille à 40 m sur
+// toute la France ferait 625 millions de cellules, impossible à allouer. On
+// découpe donc les détections en foyers séparés, chacun recevant sa propre
+// petite grille locale — celle d'un feu de 30 km ne fait que 750 × 750.
+// Le pas ci-dessous sert uniquement à ce regroupement grossier : deux
+// détections dans des cellules voisines (y compris en diagonale) sont
+// considérées comme appartenant au même foyer.
+const PAS_REGROUPEMENT_KM = 3;
+const MAX_FOYERS = 400;
+const MAX_CELLULES_PAR_FOYER = 4e6;
 
 const JOURS_MAX = 10;
 const DEPART_FEU = '2026-07-22';
@@ -62,15 +83,6 @@ function joursDepuisDepart() {
   const debut = new Date(DEPART_FEU + 'T00:00:00Z');
   const ecoules = Math.ceil((Date.now() - debut.getTime()) / 86400000) + 1;
   return Math.min(JOURS_MAX, Math.max(1, ecoules));
-}
-
-function distanceKm(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function tsUtc(date, heureBrute) {
@@ -170,6 +182,59 @@ function marquer(grille, point, origine, pas) {
   }
 }
 
+// Regroupe les détections en foyers distincts. Plutôt qu'une comparaison de
+// chaque point à tous les autres — impraticable sur des milliers de points —
+// on les range dans une grille grossière, puis on relie les cellules
+// voisines par propagation. Deux détections à moins d'une cellule l'une de
+// l'autre, diagonales comprises, finissent dans le même foyer.
+function regrouperEnFoyers(points) {
+  const pasLat = PAS_REGROUPEMENT_KM / 111.32;
+  const paquets = new Map();   // "i:j" grossier -> indices de points
+
+  points.forEach((p, n) => {
+    const pasLon = PAS_REGROUPEMENT_KM / (111.32 * Math.max(Math.cos(p.lat * Math.PI / 180), 0.2));
+    const gi = Math.floor(p.lat / pasLat);
+    const gj = Math.floor(p.lon / pasLon);
+    const k = gi + ':' + gj;
+    const liste = paquets.get(k);
+    if (liste) liste.push(n); else paquets.set(k, [n]);
+  });
+
+  const vues = new Set();
+  const foyers = [];
+
+  paquets.forEach((_, depart) => {
+    if (vues.has(depart)) return;
+    vues.add(depart);
+
+    // Propagation de proche en proche sur les cellules grossières.
+    const aVoir = [depart];
+    const indices = [];
+    while (aVoir.length) {
+      const k = aVoir.pop();
+      const liste = paquets.get(k);
+      if (liste) indices.push(...liste);
+      const [gi, gj] = k.split(':').map(Number);
+      for (let di = -1; di <= 1; di++) {
+        for (let dj = -1; dj <= 1; dj++) {
+          if (!di && !dj) continue;
+          const voisin = (gi + di) + ':' + (gj + dj);
+          if (paquets.has(voisin) && !vues.has(voisin)) {
+            vues.add(voisin);
+            aVoir.push(voisin);
+          }
+        }
+      }
+    }
+    if (indices.length) foyers.push(indices.map((n) => points[n]));
+  });
+
+  // Les plus gros foyers d'abord : si le plafond est atteint, ce sont les
+  // feux importants qui restent, pas des détections isolées.
+  foyers.sort((a, b) => b.length - a.length);
+  return foyers.slice(0, MAX_FOYERS);
+}
+
 // Paliers d'ancienneté de la dernière activité, reprise de leur
 // PROGRESSION_AGE_BINS : du rouge (vu chaud à l'instant) au beige pâle
 // (plus rien depuis plus de 40 h).
@@ -226,7 +291,7 @@ module.exports = async (req, res) => {
   } catch (e) { /* on reste sur l'instant le plus récent */ }
 
   const estDernier = instant === instants[instants.length - 1];
-  const cleCache = 'perimetre:v8:' + instant;
+  const cleCache = 'perimetre:v9:' + instant;
   let redis = null;
   try {
     const p = getClient();
@@ -242,6 +307,10 @@ module.exports = async (req, res) => {
   } catch (e) {
     redis = null;
   }
+
+  // Lancé en parallèle des requêtes FIRMS : le contour du pays ne doit pas
+  // ajouter sa latence en série à une réponse déjà faite de plusieurs appels.
+  const frontierePromise = frontiereFrance(redis).catch(() => null);
 
   const jours = joursDepuisDepart();
   const morceaux = decoupes(jours);
@@ -264,12 +333,17 @@ module.exports = async (req, res) => {
     return;
   }
 
+  // Contour réel du pays : une simple boîte laisserait entrer des feux
+  // espagnols, italiens, suisses ou allemands proches des frontières. En cas
+  // d'indisponibilité, on se replie sur la boîte, en le signalant.
+  const geometrieFrance = await frontierePromise;
+
   // Seules les détections antérieures à l'instant choisi comptent : c'est ce
   // qui permet de rejouer l'état du feu tel qu'il était alors.
   const tous = ok.flatMap((r) => r.pts)
     .filter((p) => isFinite(p.lat) && isFinite(p.lon) && isFinite(p.ts))
     .filter((p) => p.ts <= instant)
-    .filter((p) => distanceKm(LAT, LON, p.lat, p.lon) <= RAYON_KM)
+    .filter((p) => (geometrieFrance ? dansGeometrie(p.lon, p.lat, geometrieFrance) : true))
     .sort((a, b) => a.ts - b.ts);
 
   if (!tous.length) {
@@ -279,71 +353,90 @@ module.exports = async (req, res) => {
 
   const HEURE = 3600000;
 
-  // Repère de la grille de pixels : origine calée sur un multiple du pas,
-  // pour que les cellules tombent toujours au même endroit d'un calcul au
-  // suivant (sinon le contour glisserait à chaque rafraîchissement).
-  const pasGrille = pasEnDegres(LAT);
-  const origine = {
-    lat: Math.floor(LAT / pasGrille.dLat) * pasGrille.dLat,
-    lon: Math.floor(LON / pasGrille.dLon) * pasGrille.dLon,
-  };
+  // Repère commun à toutes les grilles : les indices de cellule sont calculés
+  // depuis cette origine unique, donc deux foyers voisins tombent sur la même
+  // trame et le contour ne glisse pas d'un calcul au suivant.
+  const pasGrille = pasEnDegres(LAT_REFERENCE);
+  const origine = { lat: 0, lon: 0 };
 
   let zones = [];
   let cellulesTotal = 0;
+  let foyersTraites = 0;
+  let foyersIgnores = 0;
   try {
-    // Étendue réelle des détections, élargie de la plus grande empreinte :
-    // la grille n'est allouée que sur la zone utile, pas sur toute la boîte
-    // de requête, qui serait bien plus vaste que le feu.
-    let iMin = Infinity, iMax = -Infinity, jMin = Infinity, jMax = -Infinity;
-    tous.forEach((p) => {
-      const c = celluleDe(p.lat, p.lon, origine, pasGrille);
-      if (c.i < iMin) iMin = c.i;
-      if (c.i > iMax) iMax = c.i;
-      if (c.j < jMin) jMin = c.j;
-      if (c.j > jMax) jMax = c.j;
-    });
+    const foyers = regrouperEnFoyers(tous);
     const marge = Math.max(...CAPTEURS.map(rayonCellules)) + 1;
-    const grille = creerGrille(
-      iMin - marge, jMin - marge,
-      (iMax - iMin) + 2 * marge + 1,
-      (jMax - jMin) + 2 * marge + 1
-    );
 
-    // Dernière activité par cellule : c'est la base de la coloration.
-    tous.forEach((p) => marquer(grille, p, origine, pasGrille));
+    // Anneaux accumulés par palier, tous foyers confondus : la sortie ne
+    // contient qu'une entrée par palier, quel que soit le nombre de feux.
+    const anneauxParPalier = new Map();
+    const cellulesParPalier = new Map();
+    PALIERS_AGE.forEach((p) => { anneauxParPalier.set(p.id, []); cellulesParPalier.set(p.id, 0); });
 
-    // Répartition des cellules par palier. Une cellule n'appartient qu'à un
-    // seul palier : les zones ne se superposent pas, chacune montre son
-    // propre état.
-    const parPalier = new Map();
-    PALIERS_AGE.forEach((p) => parPalier.set(p.id, []));
-    const valeurs = grille.valeurs;
-    for (let idx = 0; idx < valeurs.length; idx++) {
-      const ts = valeurs[idx];
-      if (!ts) continue;
-      cellulesTotal++;
-      parPalier.get(palierDe((instant - ts) / HEURE).id).push(idx);
-    }
+    foyers.forEach((points) => {
+      let iMin = Infinity, iMax = -Infinity, jMin = Infinity, jMax = -Infinity;
+      points.forEach((p) => {
+        const c = celluleDe(p.lat, p.lon, origine, pasGrille);
+        if (c.i < iMin) iMin = c.i;
+        if (c.i > iMax) iMax = c.i;
+        if (c.j < jMin) jMin = c.j;
+        if (c.j > jMax) jMax = c.j;
+      });
 
-    // Masque de travail partagé par tous les paliers, remis à zéro après
-    // chaque usage : une seule allocation au lieu d'une par palier.
-    const masque = new Uint8Array(valeurs.length);
+      const hauteur = (iMax - iMin) + 2 * marge + 1;
+      const largeur = (jMax - jMin) + 2 * marge + 1;
+      // Un foyer démesuré est écarté plutôt que de faire tomber la fonction
+      // sur un dépassement mémoire — le fait est signalé dans la réponse.
+      if (hauteur * largeur > MAX_CELLULES_PAR_FOYER) { foyersIgnores++; return; }
+
+      const grille = creerGrille(iMin - marge, jMin - marge, hauteur, largeur);
+      points.forEach((p) => marquer(grille, p, origine, pasGrille));
+
+      // Répartition des cellules de CE foyer par palier. Une cellule
+      // n'appartient qu'à un seul palier : les zones ne se superposent pas,
+      // chacune montre son propre état.
+      const parPalier = new Map();
+      PALIERS_AGE.forEach((p) => parPalier.set(p.id, []));
+      const valeurs = grille.valeurs;
+      for (let idx = 0; idx < valeurs.length; idx++) {
+        const ts = valeurs[idx];
+        if (!ts) continue;
+        cellulesTotal++;
+        parPalier.get(palierDe((instant - ts) / HEURE).id).push(idx);
+      }
+
+      // Masque de travail propre à ce foyer, partagé par ses paliers.
+      const masque = new Uint8Array(valeurs.length);
+      PALIERS_AGE.forEach((p) => {
+        const indices = parPalier.get(p.id);
+        if (!indices.length) return;
+        // 4 décimales ≈ 11 m : la précision utile pour une grille de 40 m, au
+        // lieu d'afficher un centimètre qui n'existe pas. Les coins partagés
+        // entre deux cellules voisines sont identiques avant arrondi, donc ils
+        // le restent après : aucun interstice ne peut apparaître.
+        const surfaces = polygonesDeCellules(grille, indices, masque, origine, pasGrille, 4);
+        if (!surfaces) return;
+        anneauxParPalier.get(p.id).push(...surfaces.coordinates);
+        cellulesParPalier.set(p.id, cellulesParPalier.get(p.id) + indices.length);
+      });
+
+      foyersTraites++;
+    });
 
     // Ordre du plus ancien au plus récent : le front encore chaud se dessine
     // par-dessus les zones éteintes.
     PALIERS_AGE.slice().reverse().forEach((p) => {
-      const indices = parPalier.get(p.id);
-      if (!indices || !indices.length) return;
-      const surfaces = polygonesDeCellules(grille, indices, masque, origine, pasGrille, 5);
-      if (!surfaces) return;
+      const polygones = anneauxParPalier.get(p.id);
+      if (!polygones || !polygones.length) return;
+      const cellules = cellulesParPalier.get(p.id);
       zones.push({
         palier: p.id,
         libelle: p.libelle,
         couleur: p.couleur,
-        cellules: indices.length,
+        cellules,
         // Surface au sol : chaque cellule fait PAS_M × PAS_M.
-        surfaceKm2: Math.round(indices.length * (PAS_M / 1000) * (PAS_M / 1000) * 100) / 100,
-        surfaces,
+        surfaceKm2: Math.round(cellules * (PAS_M / 1000) * (PAS_M / 1000) * 100) / 100,
+        surfaces: { type: 'MultiPolygon', coordinates: polygones },
       });
     });
   } catch (e) {
@@ -365,6 +458,12 @@ module.exports = async (req, res) => {
     depuis: DEPART_FEU,
     pasGrilleM: PAS_M,
     pasHeures: PAS_HEURES,
+    zone: 'France métropolitaine et Corse',
+    foyers: foyersTraites,
+    frontierePrecise: !!geometrieFrance,
+    avertissement: !geometrieFrance
+      ? 'contour précis de la France indisponible — le filtrage retombe sur une boîte englobante, qui peut inclure des feux juste au-delà des frontières'
+      : (foyersIgnores ? foyersIgnores + ' foyer(s) trop étendu(s) pour être détaillé(s) à cette résolution' : undefined),
     instant,
     instants,
     detections: tous.length,

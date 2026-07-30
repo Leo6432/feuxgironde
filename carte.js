@@ -24,12 +24,6 @@
   var MINUTE = 60000;
   var HEURE = 3600000;
 
-  var COULEURS_ACTIF = ['#F0C441', '#EE8A17', '#D8232E'];   // < 10, 10–30, ≥ 30 MW
-
-  function classeFrp(frp) {
-    return frp >= 30 ? 2 : (frp >= 10 ? 1 : 0);
-  }
-
   function echec(message) {
     if (note) note.textContent = message;
   }
@@ -140,143 +134,6 @@
         return '<tr><td>' + heureMinFr(t) + '</td><td>' + (p.satellite || '—') + '</td></tr>';
       }).join('');
       bloc.removeAttribute('hidden');
-    }
-
-    // Les autres feux de France (hors du rayon Saumos, dernières 24h) : même
-    // technique de disques fondus que Saumos (canvas + ImageOverlay, même
-    // grille de 275 m), mais UN CANEVAS PAR FOYER plutôt qu'un seul canevas
-    // pour toute la France. Un canevas unique national doit répartir sa
-    // résolution sur ~1000 km : chaque point y devient minuscule, et
-    // plusieurs détections proches (un vrai gros feu) fusionnent en une
-    // tache floue sans détail — exactement le défaut remarqué sur le feu
-    // des Alpes. En regroupant d'abord les points proches (un foyer =
-    // un groupe), chaque groupe a son propre petit canevas local, à la
-    // même résolution fine que Saumos : un point isolé reste un point net,
-    // et un vrai gros feu retrouve le même luxe de détail que Saumos.
-    var CalqueCanvas = L.ImageOverlay.extend({
-      _initImage: function () {
-        var el = this._image = this._url;
-        L.DomUtil.addClass(el, 'leaflet-image-layer');
-        if (this._zoomAnimated) L.DomUtil.addClass(el, 'leaflet-zoom-animated');
-        el.onselectstart = L.Util.falseFn;
-        el.onmousemove = L.Util.falseFn;
-      },
-    });
-
-    // Regroupement simple par proximité (chaînage) : un point rejoint un
-    // groupe dès qu'il est à moins de seuilDeg d'un point déjà dedans.
-    function grouperParProximite(pts, seuilDeg) {
-      var groupes = [];
-      var visites = new Array(pts.length).fill(false);
-      for (var i = 0; i < pts.length; i++) {
-        if (visites[i]) continue;
-        var groupe = [];
-        var file = [i];
-        visites[i] = true;
-        while (file.length) {
-          var k = file.pop();
-          groupe.push(pts[k]);
-          for (var j = 0; j < pts.length; j++) {
-            if (visites[j]) continue;
-            var dLat = pts[k].lat - pts[j].lat, dLon = pts[k].lon - pts[j].lon;
-            if (Math.sqrt(dLat * dLat + dLon * dLon) <= seuilDeg) {
-              visites[j] = true;
-              file.push(j);
-            }
-          }
-        }
-        groupes.push(groupe);
-      }
-      return groupes;
-    }
-
-    function dessinerGroupeAutres(pts) {
-      var GRILLE = 0.0025;   // même grille que Saumos : même niveau de détail.
-      var latMin = Infinity, latMax = -Infinity, lonMin = Infinity, lonMax = -Infinity;
-      pts.forEach(function (p) {
-        if (p.lat < latMin) latMin = p.lat;
-        if (p.lat > latMax) latMax = p.lat;
-        if (p.lon < lonMin) lonMin = p.lon;
-        if (p.lon > lonMax) lonMax = p.lon;
-      });
-      var marge = GRILLE * 6;
-      var sud = latMin - marge, nord = latMax + marge;
-      var ouest = lonMin - marge, est = lonMax + marge;
-
-      var cosLat = Math.cos(((sud + nord) / 2) * Math.PI / 180);
-      var largeur = Math.max(48, Math.min(900, Math.round((est - ouest) / GRILLE * 13)));
-      var echelleX = largeur / (est - ouest);
-      var hauteur = Math.max(48, Math.min(900, Math.round((nord - sud) * echelleX / cosLat)));
-      var echelleY = hauteur / (nord - sud);
-
-      var cv = document.createElement('canvas');
-      cv.width = largeur;
-      cv.height = hauteur;
-      var ctx = cv.getContext('2d');
-
-      var rx = GRILLE * echelleX * 0.85, ry = GRILLE * echelleY * 0.85;
-      var flou = Math.max(1, rx * 0.25);
-      var TAU = Math.PI * 2;
-      var parClasse = [[], [], []];
-      pts.forEach(function (p) {
-        p.px = (p.lon - ouest) * echelleX;
-        p.py = (nord - p.lat) * echelleY;
-        parClasse[classeFrp(p.frp)].push(p);
-      });
-
-      ctx.filter = 'blur(' + flou + 'px)';
-      ctx.globalAlpha = 0.88;
-      parClasse.forEach(function (liste, i) {
-        if (!liste.length) return;
-        ctx.fillStyle = COULEURS_ACTIF[i];
-        ctx.beginPath();
-        liste.forEach(function (p) {
-          ctx.moveTo(p.px + rx, p.py);
-          ctx.ellipse(p.px, p.py, rx, ry, 0, 0, TAU);
-        });
-        ctx.fill();
-      });
-      ctx.filter = 'none';
-      ctx.globalAlpha = 1;
-
-      new CalqueCanvas(cv, [[sud, ouest], [nord, est]], { interactive: false }).addTo(carte);
-    }
-
-    function afficherAutres(autres) {
-      var pts = (autres || [])
-        .map(function (a) { return { lat: +a[0], lon: +a[1], frp: +a[2] || 0, ts: +a[3] }; })
-        .filter(function (p) { return isFinite(p.lat) && isFinite(p.lon); });
-      if (!pts.length) return;
-
-      // Seuil de regroupement : assez large pour recoller les détections
-      // d'un même foyer vues par des passages satellite légèrement décalés,
-      // assez petit pour ne pas fusionner deux feux vraiment distincts.
-      var groupes = grouperParProximite(pts, 0.03);
-      groupes.forEach(dessinerGroupeAutres);
-
-      // Clic : même principe que pour Saumos, on ouvre le détail du point
-      // le plus proche. Les deux jeux de points ne se chevauchent jamais
-      // (« autres » exclut déjà le rayon Saumos côté serveur), donc les deux
-      // gestionnaires de clic ne se marchent jamais dessus.
-      var cosLatClic = Math.cos(SAUMOS[0] * Math.PI / 180);
-      carte.on('click', function (ev) {
-        var meilleur = null, d2min = Infinity;
-        pts.forEach(function (p) {
-          var dLat = ev.latlng.lat - p.lat;
-          var dLon = (ev.latlng.lng - p.lon) * cosLatClic;
-          var d2 = dLat * dLat + dLon * dLon;
-          if (d2 < d2min) { d2min = d2; meilleur = p; }
-        });
-        if (!meilleur || Math.sqrt(d2min) > 0.015) return;
-        L.popup()
-          .setLatLng([meilleur.lat, meilleur.lon])
-          .setContent(
-            '<strong>' + (meilleur.frp ? '≈ ' + Math.round(meilleur.frp) + ' MW' : 'puissance inconnue') + '</strong><br>' +
-            (isFinite(meilleur.ts) ? 'détecté ' + heureFr(meilleur.ts) : '') +
-            '<br><span style="opacity:.75">Autre feu, hors du suivi détaillé de Saumos</span>'
-          )
-          .openOn(carte);
-      });
     }
 
     // ── État d'activité, cellule par cellule (voir /api/perimetre) ──────
@@ -407,6 +264,17 @@
       chiffres(bilan.nb, bilan.frpMax, bilan.derniereTs ? heureFr(bilan.derniereTs) : '—');
       majEtiquette(d, zones);
       if (blocTemps) blocTemps.removeAttribute('hidden');
+
+      if (note) {
+        var texte = (d.foyers || 0) + ' foyer' + ((d.foyers || 0) > 1 ? 's' : '') +
+          ' détecté' + ((d.foyers || 0) > 1 ? 's' : '') + ' — ' + (d.zone || 'France');
+        // Toute dégradation reste annoncée : sans le contour du pays, des feux
+        // juste au-delà des frontières peuvent apparaître, et il ne faut pas
+        // laisser croire le contraire.
+        if (d.avertissement) texte += '. ' + d.avertissement;
+        else note.classList.remove('stale');
+        note.textContent = texte + '.';
+      }
     }
 
     function chargerInstant(instant) {
@@ -484,24 +352,17 @@
         echec('État du feu indisponible pour le moment.');
       });
 
-    // Note générale, prochain passage, planning des passages et autres
-    // feux : viennent toujours de /api/firms, indépendamment du cliché
-    // choisi ci-dessus.
+    // Prochain passage satellite et planning des passages : viennent de
+    // /api/firms, qui suit le secteur de Saumos, indépendamment de la date
+    // choisie sur la barre. La note au-dessus de la carte, elle, est écrite
+    // par /api/perimetre (voir afficherEtat) — deux sources écrivant au même
+    // endroit se seraient écrasées l'une l'autre.
     fetch('/api/firms?jours=max')
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d || !d.ok) return;
-
-        if (note) {
-          var texte = d.total + ' détections sur ' + d.fenetre + ' — ' + d.source + '.';
-          if (d.avertissement) texte += ' ' + d.avertissement + '.';
-          else note.classList.remove('stale');
-          note.textContent = texte;
-        }
-
         afficherPassage(isFinite(d.prochainPasse) ? d.prochainPasse : null);
         afficherPlanning(d.planningPassages);
-        afficherAutres(d.autres);
       })
       .catch(function () { /* la carte reste utilisable sans ces compléments */ });
   });
