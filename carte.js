@@ -2,13 +2,13 @@
 //
 // Les données viennent de /api/perimetre, qui reprend le produit
 // `last_activity_state` du site nicolaslecorvec.github.io/fumees-
-// nouvelle_aquitaine : chaque cellule d'une grille de 40 m retient
+// nouvelle_aquitaine : chaque cellule d'une grille de 20 m retient
 // l'horodatage de sa dernière détection satellite, et les cellules sont
 // réparties en paliers selon l'ancienneté de cette activité — du rouge
 // (encore chaud) au beige pâle (plus rien depuis plus de 40 h).
 //
-// La barre temporelle rejoue cet état à une date passée, jusqu'à deux
-// semaines en arrière : chaque cran lit un état déjà calculé et archivé côté
+// La barre temporelle rejoue cet état à une date passée, sur les 10 jours que
+// couvre l'API FIRMS : chaque cran lit un état déjà calculé et archivé côté
 // serveur (voir api/perimetre-precalcul.js), plutôt que de déclencher son
 // propre calcul au moment où l'utilisateur y arrive.
 //

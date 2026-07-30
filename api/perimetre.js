@@ -72,11 +72,13 @@ module.exports = async (req, res) => {
   const points = detections.points
     .filter((p) => (geometrieFrance ? etatFeux.dansGeometrie(p.lon, p.lat, geometrieFrance) : true));
 
-  // Un cran antérieur à ce que FIRMS accepte de renvoyer, et jamais archivé,
-  // ne peut pas être reconstitué : mieux vaut le dire que d'afficher une carte
-  // vide, qui laisserait croire que rien ne brûlait à cette date.
-  const limiteFirms = maintenant - etatFeux.JOURS_FIRMS_MAX * 86400000;
-  if (instant < limiteFirms && !points.some((p) => p.ts <= instant)) {
+  // Une date antérieure à la plus ancienne détection dont on dispose ne peut
+  // pas être reconstituée. Le cas normal est couvert — la barre s'arrête à la
+  // portée de FIRMS — mais si leur service renvoie une fenêtre plus courte que
+  // prévu, mieux vaut le dire que d'afficher une carte vide, qui laisserait
+  // croire que rien ne brûlait à cette date.
+  const plusAncienne = points.length ? points[0].ts : null;
+  if (plusAncienne !== null && instant < plusAncienne) {
     res.status(200).json({
       ok: true,
       instant,
@@ -85,8 +87,9 @@ module.exports = async (req, res) => {
       actifs: [],
       paliers: etatFeux.PALIERS_AGE.map((p) => ({ id: p.id, libelle: p.libelle, couleur: p.couleur })),
       horsArchive: true,
-      avertissement: 'aucune donnée pour cette date : l’API FIRMS ne remonte qu’à '
-        + etatFeux.JOURS_FIRMS_MAX + ' jours, et cet état n’a pas été archivé avant de sortir de cette fenêtre',
+      avertissement: 'aucune donnée pour cette date : les détections disponibles ne '
+        + 'commencent qu’au ' + new Date(plusAncienne).toISOString().slice(0, 10)
+        + ' (l’API FIRMS ne remonte qu’à ' + etatFeux.JOURS_FIRMS_MAX + ' jours)',
     });
     return;
   }
