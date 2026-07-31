@@ -23,6 +23,44 @@
     if (el) el.textContent = valeur;
   }
 
+  // ── Foyers posés sur la silhouette du hero ────────────────────────────
+  // Mêmes paramètres que ceux ayant servi à tracer le contour dans le HTML :
+  // projection équirectangulaire corrigée du cosinus de la latitude moyenne,
+  // sans quoi la France paraîtrait écrasée en largeur. Les changer ici sans
+  // retracer le contour décalerait les points.
+  var CARTE = { ouest: -4.784901, nord: 51.087541, k: 0.6917648826615689, echelle: 61.75992947839518 };
+  // Au-delà, les points se recouvrent sans rien ajouter à la lecture, et le
+  // DOM s'alourdit pour rien. Les plus puissants sont gardés en priorité.
+  var MAX_POINTS = 260;
+
+  function poserFoyers(actifs) {
+    var groupe = document.getElementById('foyers');
+    var vide = document.getElementById('carte-vide');
+    if (!groupe) return;
+
+    var points = actifs
+      .slice()
+      .sort(function (a, b) { return (b[2] || 0) - (a[2] || 0); })
+      .slice(0, MAX_POINTS);
+
+    if (vide) vide.hidden = points.length > 0;
+
+    groupe.innerHTML = points.map(function (p, n) {
+      var x = (p[1] - CARTE.ouest) * CARTE.k * CARTE.echelle;
+      var y = (CARTE.nord - p[0]) * CARTE.echelle;
+      // Le halo grandit avec la puissance radiative, sans qu'un feu isolé très
+      // intense n'écrase toute la carte : racine plutôt que proportionnel.
+      var r = 7 + Math.min(16, Math.sqrt(Math.max(0, p[2] || 0)) * 1.6);
+      // Décalage du départ d'animation : sans lui, tous les foyers pulseraient
+      // ensemble, ce qui ferait clignoter la carte entière.
+      var retard = ((n * 37) % 100) / 100 * 3.4;
+      return '<g class="foyer" style="animation-delay:-' + retard.toFixed(2) + 's">'
+        + '<circle class="foyer-halo" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r.toFixed(1) + '"/>'
+        + '<circle class="foyer-coeur" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="1.9"/>'
+        + '</g>';
+    }).join('');
+  }
+
   Promise.all([
     fetch('/api/perimetre').then(function (r) { return r.json(); }).catch(function () { return null; }),
     // jours=max, et non 1 : l'horaire des passages se déduit d'au moins deux
@@ -39,6 +77,7 @@
     document.getElementById('chiffres').hidden = false;
 
     if (perimetre && perimetre.ok) {
+      poserFoyers(perimetre.actifs || []);
       texte('v-foyers', String(perimetre.foyers || 0));
       texte('v-foyers-detail', (perimetre.detections || 0).toLocaleString('fr-FR') + ' détections actives');
 
