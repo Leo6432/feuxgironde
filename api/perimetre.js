@@ -87,23 +87,21 @@ module.exports = async (req, res) => {
       actifs: [],
       paliers: etatFeux.PALIERS_AGE.map((p) => ({ id: p.id, libelle: p.libelle, couleur: p.couleur })),
       horsArchive: true,
-      avertissement: 'aucune donnée pour cette date : les détections disponibles ne '
-        + 'commencent qu’au ' + new Date(plusAncienne).toISOString().slice(0, 10)
-        + ' (l’API FIRMS ne remonte qu’à ' + etatFeux.JOURS_FIRMS_MAX + ' jours)',
+      avertissement: 'aucune donnée pour cette date : les détections conservées ne '
+        + 'commencent qu’au ' + new Date(plusAncienne).toISOString().slice(0, 10),
     });
     return;
   }
 
   let etat;
   try {
-    const prepare = etatFeux.preparerFoyers(points);
-    etatFeux.avancerJusqua(prepare.foyers, instant, prepare.origine, prepare.pasGrille);
-    const { zones, cellulesTotal } = etatFeux.zonesDepuisFoyers(
-      prepare.foyers, instant, prepare.origine, prepare.pasGrille
-    );
+    // La maille s'élargit d'elle-même si le rendu serait trop lourd à
+    // transporter : mieux vaut des pixels plus gros qu'une réponse qui ne part
+    // pas.
+    const t = etatFeux.etatAuBudget(points, instant);
     etat = etatFeux.sortie(
-      instant, instants, zones, cellulesTotal, prepare.foyers.length,
-      etatFeux.foyersActifs(points, instant), geometrieFrance, prepare, detections
+      instant, instants, t.zones, t.cellulesTotal, t.prepare.foyers.length,
+      etatFeux.foyersActifs(points, instant), geometrieFrance, t.prepare, detections
     );
   } catch (e) {
     res.status(200).json({ ok: false, raison: 'calcul des zones échoué : ' + e.message, instants });

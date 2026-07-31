@@ -68,9 +68,31 @@ module.exports = async (req, res) => {
   const instants = etatFeux.instantsDisponibles(maintenant);
   const dernier = instants[instants.length - 1];
 
+  // La finesse est arrêtée une fois pour toutes, en sondant le cran le plus
+  // récent — celui qui porte le plus de terrain brûlé, donc le plus de
+  // contours. Tous les crans partagent ensuite la même maille : sans ça, la
+  // carte changerait de résolution rien qu'en déplaçant le curseur.
+  //
+  // La sonde coûte une passe de marquage supplémentaire. C'est le prix d'une
+  // décision prise sur le cran le plus lourd plutôt que sur le premier venu ;
+  // la passe chronologique, elle, ne marque toujours qu'une fois.
+  let rangMini = 0;
+  let sommetsSonde = 0;
+  try {
+    const sonde = etatFeux.etatAuBudget(points, dernier);
+    rangMini = sonde.rangMini;
+    sommetsSonde = sonde.sommets;
+  } catch (e) {
+    res.status(200).json({ ok: false, raison: 'sondage de la maille échoué : ' + e.message });
+    return;
+  }
+
+  // Les grilles de la sonde ont été avancées jusqu'au dernier cran ; la passe
+  // chronologique repart donc de grilles vierges. La sonde est ici hors de
+  // portée, sa mémoire peut être reprise avant qu'on en alloue d'autres.
   let prepare;
   try {
-    prepare = etatFeux.preparerFoyers(points);
+    prepare = etatFeux.preparerFoyers(points, rangMini);
   } catch (e) {
     res.status(200).json({ ok: false, raison: 'préparation des foyers échouée : ' + e.message });
     return;
@@ -115,6 +137,8 @@ module.exports = async (req, res) => {
     restants,
     foyers: prepare.foyers.length,
     detections: points.length,
+    mailleFineM: prepare.mailleMinM,
+    sommetsDernierCran: sommetsSonde,
     detectionsDuCache: detections.duCache,
     frontierePrecise: !!geometrieFrance,
     dureeMs: Date.now() - depart,
