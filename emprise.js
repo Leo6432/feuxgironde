@@ -34,15 +34,107 @@
   // l'état courant.
   var enCours = null;
 
+  var FUSEAU = 'Europe/Paris';
+  var MINUTE = 60000;
+  var HEURE = 3600000;
+
   function formateDate(ts) {
     return new Date(ts).toLocaleString('fr-FR', {
-      timeZone: 'Europe/Paris',
+      timeZone: FUSEAU,
       day: 'numeric',
       month: 'short',
       hour: '2-digit',
       minute: '2-digit',
     });
   }
+
+  function partie(ms, options, type) {
+    var morceaux = new Intl.DateTimeFormat('fr-FR', options).formatToParts(new Date(ms));
+    for (var i = 0; i < morceaux.length; i++) {
+      if (morceaux[i].type === type) return morceaux[i].value;
+    }
+    return '';
+  }
+
+  // FIRMS horodate en UTC ; tout est affiché en heure française, comme sur le
+  // reste du site — montrer de l'UTC ferait croire à deux heures de retard.
+  function heureMinFr(ms) {
+    var opts = { hour: 'numeric', minute: 'numeric', hourCycle: 'h23', timeZone: FUSEAU };
+    return partie(ms, opts, 'hour').padStart(2, '0') + 'h' + partie(ms, opts, 'minute').padStart(2, '0');
+  }
+
+  // ── Passages satellite ────────────────────────────────────────────────
+  // L'heure du prochain passage est figée côté serveur (prochainPassageFige
+  // dans /api/firms) : elle ne doit pas bouger tant que ce passage n'a pas eu
+  // lieu. Le client n'affiche qu'un compte à rebours vers cette cible, il ne
+  // recalcule jamais l'horaire lui-même.
+  function afficherProchain(cible) {
+    var valeur = document.getElementById('sat-prochain');
+    var detail = document.getElementById('sat-detail');
+    if (!valeur) return;
+    if (!cible) {
+      valeur.textContent = '—';
+      if (detail) detail.textContent = 'historique trop court pour dégager une habitude fiable';
+      return;
+    }
+    function maj() {
+      var attente = cible - Date.now();
+      if (attente <= 0) { valeur.textContent = 'en cours'; return; }
+      var h = Math.floor(attente / HEURE);
+      var mn = Math.round((attente % HEURE) / MINUTE);
+      valeur.textContent = h
+        ? 'dans ≈ ' + h + ' h' + (mn ? ' ' + String(mn).padStart(2, '0') : '')
+        : 'dans ≈ ' + mn + ' min';
+      if (detail) {
+        var opts = { day: 'numeric', timeZone: FUSEAU };
+        var libJour = partie(cible, opts, 'day') === partie(Date.now(), opts, 'day')
+          ? 'aujourd’hui' : 'demain';
+        detail.textContent = libJour + ' vers ' + heureMinFr(cible) + ' (heure française)';
+      }
+    }
+    maj();
+    setInterval(maj, 60 * 1000);
+  }
+
+  function afficherPlanning(passages) {
+    var bloc = document.getElementById('sat-bloc-planning');
+    var corps = document.getElementById('sat-planning');
+    if (!bloc || !corps || !passages || !passages.length) return;
+    var minuit = Math.floor(Date.now() / (24 * HEURE)) * 24 * HEURE;
+    corps.innerHTML = passages.map(function (p) {
+      return '<tr><td>' + heureMinFr(minuit + p.minute * MINUTE) + '</td><td>'
+        + (p.satellite || '—') + '</td></tr>';
+    }).join('');
+    bloc.removeAttribute('hidden');
+  }
+
+  (function passagesSatellite() {
+    var bouton = document.getElementById('bouton-satellite');
+    var fenetre = document.getElementById('fenetre-satellite');
+    var fermer = document.getElementById('fermer-satellite');
+    if (!bouton || !fenetre) return;
+
+    function basculer(ouvrir) {
+      fenetre.hidden = !ouvrir;
+      bouton.setAttribute('aria-expanded', ouvrir ? 'true' : 'false');
+    }
+    bouton.addEventListener('click', function () { basculer(fenetre.hidden); });
+    if (fermer) fermer.addEventListener('click', function () { basculer(false); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') basculer(false);
+    });
+
+    // Chargé une fois au démarrage : ces horaires ne dépendent pas du curseur
+    // temporel, ils décrivent le rythme des satellites aujourd'hui.
+    fetch('/api/firms?jours=max')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok) return;
+        afficherProchain(isFinite(d.prochainPasse) ? d.prochainPasse : null);
+        afficherPlanning(d.planningPassages);
+      })
+      .catch(function () { /* la fenêtre reste sur ses tirets */ });
+  })();
 
   function afficher(d) {
     if (calque) { carte.removeLayer(calque); calque = null; }

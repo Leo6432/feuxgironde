@@ -58,6 +58,75 @@
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
+
+  /* Bouton satellite : même hauteur que la barre temporelle, posé juste à sa
+     droite pour rester dans le même regard, sans empiéter dessus. */
+  .bouton-satellite {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    margin-left: calc(min(92vw, 560px) / 2 + 10px);
+    z-index: 1000;
+    width: 46px;
+    height: 46px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(11, 15, 26, .82);
+    color: #fff;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, .35);
+  }
+  .bouton-satellite:hover { background: rgba(30, 40, 60, .92); }
+
+  .fenetre-satellite {
+    position: fixed;
+    left: 50%;
+    bottom: 78px;
+    transform: translateX(-50%);
+    z-index: 1001;
+    width: min(92vw, 420px);
+    max-height: min(70vh, 560px);
+    overflow-y: auto;
+    background: rgba(11, 15, 26, .95);
+    color: #fff;
+    padding: 18px 20px;
+    border-radius: 14px;
+    font: 400 13px/1.45 -apple-system, "Segoe UI", Arial, sans-serif;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, .5);
+  }
+  .fenetre-satellite[hidden] { display: none; }
+  .fenetre-satellite h2 {
+    margin: 0 0 2px;
+    font: 600 15px/1.3 "Archivo", -apple-system, "Segoe UI", Arial, sans-serif;
+  }
+  .fenetre-satellite .fermer {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    border: none;
+    background: none;
+    color: #9aa5b8;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .fenetre-satellite .prochain {
+    font: 700 22px/1.2 "Archivo", -apple-system, "Segoe UI", Arial, sans-serif;
+    color: #ff6b3d;
+    margin: 10px 0 2px;
+  }
+  .fenetre-satellite .detail { color: #9aa5b8; font-size: 12px; }
+  .fenetre-satellite table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  .fenetre-satellite th, .fenetre-satellite td {
+    text-align: left;
+    padding: 5px 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, .09);
+  }
+  .fenetre-satellite th { color: #9aa5b8; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+  .fenetre-satellite td:first-child { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .fenetre-satellite .note { color: #7d8798; font-size: 11px; margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -68,6 +137,28 @@
   <button type="button" id="lecture" aria-label="Lecture de la progression">▶</button>
   <input type="range" id="curseur" min="0" max="0" step="1" value="0">
   <span id="etiquette"></span>
+</div>
+
+<button type="button" class="bouton-satellite" id="bouton-satellite"
+        aria-label="Passages satellite" title="Passages satellite"
+        aria-expanded="false" aria-controls="fenetre-satellite">🛰</button>
+
+<div class="fenetre-satellite" id="fenetre-satellite" role="dialog"
+     aria-label="Passages satellite" hidden>
+  <button type="button" class="fermer" id="fermer-satellite" aria-label="Fermer">×</button>
+  <h2>Prochain passage satellite</h2>
+  <div class="prochain" id="sat-prochain">—</div>
+  <div class="detail" id="sat-detail"></div>
+  <div id="sat-bloc-planning" hidden>
+    <h2 style="margin-top:18px">Passages observés dans la journée</h2>
+    <table>
+      <thead><tr><th>Heure (française)</th><th>Satellite</th></tr></thead>
+      <tbody id="sat-planning"></tbody>
+    </table>
+  </div>
+  <p class="note">Horaires réels déduits des détections des derniers jours
+    (VIIRS SNPP/NOAA-20/NOAA-21, MODIS Terra/Aqua, Landsat) — une habitude
+    observée, pas une prévision d’orbite.</p>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
