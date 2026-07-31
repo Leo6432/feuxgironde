@@ -54,16 +54,6 @@
     letter-spacing: .01em;
   }
   .marque svg { width: 22px; height: 22px; flex: 0 0 auto; }
-  header a.lien-carte {
-    color: #cfd6e2;
-    text-decoration: none;
-    font: 600 13px/1 "Source Sans 3", sans-serif;
-    border: 1px solid rgba(255, 255, 255, .18);
-    padding: 9px 16px;
-    border-radius: 999px;
-    transition: border-color .15s, color .15s;
-  }
-  header a.lien-carte:hover { border-color: rgba(255, 255, 255, .5); color: #fff; }
 
   main {
     flex: 1;
@@ -181,6 +171,34 @@
   }
   .avertissement[hidden] { display: none; }
 
+  /* ── Bilan annuel : chiffres fixes, pas tirés d'une source en direct ─── */
+  .bilan-annuel {
+    margin-top: 64px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .bilan-valeur {
+    font: 800 clamp(42px, 9vw, 84px)/1 "Archivo", sans-serif;
+    letter-spacing: -.01em;
+    background: linear-gradient(90deg, #ff5a3c, #ffb23c);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .bilan-libelle {
+    margin-top: 4px;
+    font: 600 14px/1.3 "Source Sans 3", sans-serif;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: #9aa5b8;
+  }
+  .bilan-comparaison {
+    margin-top: 16px;
+    font-size: 14px;
+    color: #7d8798;
+  }
+
   footer {
     padding: 22px clamp(20px, 5vw, 56px) 26px;
     text-align: center;
@@ -206,7 +224,6 @@
     </svg>
     Feux en France
   </div>
-  <a class="lien-carte" href="/emprise.html">Ouvrir la carte →</a>
 </header>
 
 <main>
@@ -248,14 +265,15 @@
       <div class="stat-valeur" id="v-passage">—</div>
       <div class="stat-detail" id="v-passage-detail"></div>
     </div>
-    <div class="stat" id="stat-effis" hidden>
-      <div class="stat-libelle">Brûlé en 2026 (France)</div>
-      <div class="stat-valeur" id="v-effis">—</div>
-      <div class="stat-detail" id="v-effis-detail">Copernicus EFFIS, saison en cours</div>
-    </div>
   </div>
 
   <p class="avertissement" id="avertissement" hidden></p>
+
+  <div class="bilan-annuel">
+    <span class="bilan-valeur">91 175 ha</span>
+    <span class="bilan-libelle">brûlés en 2026</span>
+    <span class="bilan-comparaison">2025 : 36 951 ha brûlés</span>
+  </div>
 </main>
 
 <footer>

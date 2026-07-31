@@ -69,19 +69,4 @@
       }
     }
   }).catch(function () { /* les chiffres restent masqués, le reste de la page fonctionne */ });
-
-  // Séparé du Promise.all ci-dessus : EFFIS est un service tiers plus lent
-  // et moins prévisible que nos propres endpoints — s'il traîne ou échoue,
-  // il ne doit pas retarder ni masquer le reste des chiffres.
-  fetch('/api/effis')
-    .then(function (r) { return r.json(); })
-    .then(function (d) {
-      if (!d || !d.ok || !isFinite(d.hectares)) return;
-      texte('v-effis', d.hectares.toLocaleString('fr-FR') + ' ha');
-      if (d.derniereDate) {
-        texte('v-effis-detail', 'Copernicus EFFIS · maj ' + String(d.derniereDate).slice(0, 10));
-      }
-      document.getElementById('stat-effis').hidden = false;
-    })
-    .catch(function () { /* la tuile EFFIS reste masquée, le reste de la page est déjà affiché */ });
 })();
