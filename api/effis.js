@@ -63,17 +63,11 @@ function unSommetEnFrance(geometrie, contour) {
   return false;
 }
 
-async function telecharger() {
-  const url = ENDPOINT
-    + '?service=WFS&version=2.0.0&request=GetFeature'
-    + '&typeNames=' + encodeURIComponent(COUCHE)
-    + '&outputFormat=application/json'
-    + '&srsName=EPSG:4326'
-    + '&bbox=' + BBOX + ',EPSG:4326';
+function attendre(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
+async function uneRequete(url) {
   const stop = new AbortController();
   const minuteur = setTimeout(() => stop.abort(), DELAI_MS);
-  let texte;
   try {
     // Certains services WFS gouvernementaux/européens filtrent les requêtes
     // sans en-têtes de navigateur (pare-feu applicatif) — un fetch nu, sans
@@ -86,17 +80,47 @@ async function telecharger() {
         Accept: 'application/json,*/*',
       },
     });
-    texte = await r.text();
+    const texte = await r.text();
     if (!r.ok) throw new Error('EFFIS a répondu HTTP ' + r.status + ' : ' + texte.slice(0, 200));
+    return texte;
   } catch (e) {
     // e.cause porte souvent le vrai motif bas niveau (ex. ECONNRESET) pour
     // une erreur comme "terminated" — sans lui, ce genre d'échec réseau reste
     // impossible à diagnostiquer à distance.
     const cause = e.cause ? (' [cause: ' + (e.cause.code || e.cause.message || e.cause) + ']') : '';
-    throw new Error((e.name === 'AbortError' ? 'EFFIS : délai dépassé' : e.message) + cause);
+    const erreur = new Error((e.name === 'AbortError' ? 'EFFIS : délai dépassé' : e.message) + cause);
+    // Une erreur HTTP propre (4xx/5xx) est une vraie réponse du serveur : la
+    // répéter ne changerait rien. Une coupure bas niveau, elle, peut être
+    // passagère — c'est la seule qu'il vaut la peine de retenter.
+    erreur.reessayable = !/^EFFIS a répondu HTTP/.test(e.message || '');
+    throw erreur;
   } finally {
     clearTimeout(minuteur);
   }
+}
+
+async function telecharger() {
+  const url = ENDPOINT
+    + '?service=WFS&version=2.0.0&request=GetFeature'
+    + '&typeNames=' + encodeURIComponent(COUCHE)
+    + '&outputFormat=application/json'
+    + '&srsName=EPSG:4326'
+    + '&bbox=' + BBOX + ',EPSG:4326';
+
+  const TENTATIVES = 3;
+  let texte;
+  let derniereErreur;
+  for (let n = 1; n <= TENTATIVES; n++) {
+    try {
+      texte = await uneRequete(url);
+      break;
+    } catch (e) {
+      derniereErreur = e;
+      if (!e.reessayable || n === TENTATIVES) throw e;
+      await attendre(500 * n);   // 500 ms, puis 1 s avant la dernière tentative
+    }
+  }
+  if (texte === undefined) throw derniereErreur;
 
   let json;
   try {
