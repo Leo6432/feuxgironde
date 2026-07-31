@@ -75,11 +75,25 @@ async function telecharger() {
   const minuteur = setTimeout(() => stop.abort(), DELAI_MS);
   let texte;
   try {
-    const r = await fetch(url, { signal: stop.signal });
+    // Certains services WFS gouvernementaux/européens filtrent les requêtes
+    // sans en-têtes de navigateur (pare-feu applicatif) — un fetch nu, sans
+    // User-Agent ni Accept, s'y fait parfois couper la connexion en cours de
+    // réponse plutôt que rejeter proprement avec un code d'erreur HTTP.
+    const r = await fetch(url, {
+      signal: stop.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; feux-france/1.0; +https://feux-france.vercel.app/)',
+        Accept: 'application/json,*/*',
+      },
+    });
     texte = await r.text();
     if (!r.ok) throw new Error('EFFIS a répondu HTTP ' + r.status + ' : ' + texte.slice(0, 200));
   } catch (e) {
-    throw new Error(e.name === 'AbortError' ? 'EFFIS : délai dépassé' : e.message);
+    // e.cause porte souvent le vrai motif bas niveau (ex. ECONNRESET) pour
+    // une erreur comme "terminated" — sans lui, ce genre d'échec réseau reste
+    // impossible à diagnostiquer à distance.
+    const cause = e.cause ? (' [cause: ' + (e.cause.code || e.cause.message || e.cause) + ']') : '';
+    throw new Error((e.name === 'AbortError' ? 'EFFIS : délai dépassé' : e.message) + cause);
   } finally {
     clearTimeout(minuteur);
   }
