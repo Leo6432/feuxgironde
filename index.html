@@ -60,18 +60,19 @@
     width: 100%;
     max-width: 1240px;
     margin: 0 auto;
-    padding: 40px clamp(20px, 5vw, 56px) 40px;
+    padding: 0 clamp(20px, 5vw, 56px) 40px;
   }
 
-  /* Deux colonnes : le discours à gauche, la carte du pays à droite. Un bloc
-     centré et empilé lisait comme un gabarit ; l'asymétrie donne un point
-     d'entrée au regard et laisse le visuel porter le sujet. */
+  /* Deux colonnes : le discours à gauche, la carte du pays à droite. Le bloc
+     tient dans l'écran et y est centré — c'est la première impression, elle ne
+     doit pas arriver coupée ; le bilan annuel vient ensuite, en défilant. */
   .hero {
     display: grid;
     grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
     gap: clamp(24px, 5vw, 64px);
     align-items: center;
-    min-height: min(72vh, 620px);
+    min-height: calc(100vh - 76px);
+    padding-bottom: 24px;
   }
   .hero-texte { text-align: left; }
 
@@ -205,17 +206,20 @@
 
   /* ── Bilan annuel ────────────────────────────────────────────────────
      Emphase plutôt que huit teintes : une seule série, 2026 en accent et
-     les années passées en retrait. Couleurs validées contre le fond sombre
-     (séparation daltonisme ΔE 12.6, vision normale 22.3, contraste ≥ 3:1) ;
-     le libellé direct sur 2026 sert d'encodage secondaire, pour que
-     l'emphase ne repose jamais sur la seule couleur. */
+     les années passées en retrait. Le libellé direct sur 2026 sert d'encodage
+     secondaire, pour que l'emphase ne repose jamais sur la seule couleur. */
   .graphique {
     margin-top: clamp(56px, 8vw, 96px);
     padding-top: clamp(40px, 6vw, 64px);
     border-top: 1px solid rgba(255, 255, 255, .08);
     width: 100%;
     text-align: left;
-    --viz-barre: #6b7280;
+    /* Braise pour les années passées, orange vif pour 2026. Paire validée
+       contre le fond sombre : bande de luminosité, plancher de chroma,
+       séparation daltonisme ΔE 11.8 et vision normale 16.7, contraste ≥ 3:1
+       — tous les contrôles au vert. Le gris froid d'avant jurait avec le
+       reste de la page. */
+    --viz-barre: #96502f;
     --viz-accent: #e8632f;
     --viz-grille: rgba(255, 255, 255, .07);
     --viz-axe: rgba(255, 255, 255, .14);
@@ -235,10 +239,9 @@
   .viz-axe { stroke: var(--viz-axe); stroke-width: 1; }
   .viz-tick { fill: var(--viz-encre-attenuee); font: 400 11px/1 "Source Sans 3", sans-serif; font-variant-numeric: tabular-nums; }
   .viz-annee { fill: var(--viz-encre-attenuee); font: 400 11.5px/1 "Source Sans 3", sans-serif; }
-  .viz-barre { fill: var(--viz-barre); transition: fill .12s; }
-  .viz-barre.est-accent { fill: var(--viz-accent); }
-  .viz-bande:hover .viz-barre { fill: #9aa5b8; }
-  .viz-bande:hover .viz-barre.est-accent { fill: #ff7a45; }
+  .viz-barre { fill: url(#degradeBarre); transition: opacity .12s; }
+  .viz-barre.est-accent { fill: url(#degradeAccent); }
+  .viz-bande:hover .viz-barre { opacity: .78; }
   .viz-etiquette { fill: #fff; font: 700 13px/1 "Archivo", sans-serif; }
   .viz-etiquette-sous { fill: var(--viz-encre-attenuee); font: 400 11px/1 "Source Sans 3", sans-serif; }
 

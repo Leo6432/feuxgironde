@@ -162,6 +162,18 @@
     var svg = ['<svg viewBox="0 0 ' + L + ' ' + H + '" role="img" '
       + 'aria-label="Surface brûlée en France par année, de 2006 à 2026, en hectares">'];
 
+    // Dégradé vertical léger : la barre s'éclaircit vers son sommet, ce qui la
+    // détache du fond sans ajouter d'encre. L'écart reste faible — un dégradé
+    // marqué ferait croire à une information supplémentaire qui n'existe pas.
+    svg.push('<defs>'
+      + '<linearGradient id="degradeBarre" x1="0" y1="0" x2="0" y2="1">'
+      + '<stop offset="0%" stop-color="#b0633a"/><stop offset="100%" stop-color="#96502f"/>'
+      + '</linearGradient>'
+      + '<linearGradient id="degradeAccent" x1="0" y1="0" x2="0" y2="1">'
+      + '<stop offset="0%" stop-color="#ff8a4d"/><stop offset="100%" stop-color="#e8632f"/>'
+      + '</linearGradient>'
+      + '</defs>');
+
     // Grille horizontale + graduations, à valeurs rondes.
     svg.push('<g class="viz-grille">');
     [0, 25000, 50000, 75000, 100000].forEach(function (v) {
