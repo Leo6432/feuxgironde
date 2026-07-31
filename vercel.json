@@ -9,6 +9,10 @@
     {
       "source": "/api/relais-firms/(.*)",
       "destination": "/api/relais-firms"
+    },
+    {
+      "source": "/",
+      "destination": "/emprise.html"
     }
   ]
 }
