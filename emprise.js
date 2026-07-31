@@ -15,6 +15,9 @@
   var SOURCE = '/api/perimetre';
 
   var carte = L.map('map', { scrollWheelZoom: true }).setView(FRANCE, ZOOM_FRANCE);
+  // Exposée pour que l'ouverture du panneau puisse prévenir Leaflet que la
+  // zone visible a changé (invalidateSize).
+  window.carteEmprise = carte;
 
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     maxZoom: 18,
@@ -109,19 +112,31 @@
   }
 
   (function passagesSatellite() {
-    var bouton = document.getElementById('bouton-satellite');
-    var fenetre = document.getElementById('fenetre-satellite');
-    var fermer = document.getElementById('fermer-satellite');
-    if (!bouton || !fenetre) return;
+    var ongletCarte = document.getElementById('onglet-carte');
+    var ongletSat = document.getElementById('onglet-satellite');
+    var panneau = document.getElementById('panneau-satellite');
+    if (!ongletCarte || !ongletSat || !panneau) return;
 
-    function basculer(ouvrir) {
-      fenetre.hidden = !ouvrir;
-      bouton.setAttribute('aria-expanded', ouvrir ? 'true' : 'false');
+    // « Carte » et « Satellite » sont deux vues exclusives : le panneau
+    // recouvrant une partie de la carte, laisser les deux actifs en même temps
+    // n'aurait pas de sens.
+    function choisir(vueSatellite) {
+      panneau.hidden = !vueSatellite;
+      document.body.classList.toggle('panneau-ouvert', vueSatellite);
+      ongletSat.classList.toggle('is-actif', vueSatellite);
+      ongletCarte.classList.toggle('is-actif', !vueSatellite);
+      ongletSat.setAttribute('aria-pressed', vueSatellite ? 'true' : 'false');
+      ongletCarte.setAttribute('aria-pressed', vueSatellite ? 'false' : 'true');
+      // La zone visible de la carte change quand le panneau s'ouvre ou se
+      // ferme : sans cela, Leaflet garde l'ancienne taille et laisse une
+      // bande grise.
+      if (window.carteEmprise) window.carteEmprise.invalidateSize();
     }
-    bouton.addEventListener('click', function () { basculer(fenetre.hidden); });
-    if (fermer) fermer.addEventListener('click', function () { basculer(false); });
+
+    ongletSat.addEventListener('click', function () { choisir(panneau.hidden); });
+    ongletCarte.addEventListener('click', function () { choisir(false); });
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') basculer(false);
+      if (e.key === 'Escape') choisir(false);
     });
 
     // Chargé une fois au démarrage : ces horaires ne dépendent pas du curseur

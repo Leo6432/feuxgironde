@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Surface brûlée observée — Feux Gironde</title>
-<meta name="description" content="Emprise brûlée de l'incendie de Saumos, reconstruite à partir des détections satellite NASA FIRMS, colorée par date de première détection.">
+<title>Feux en France, vue plein écran — Feux Gironde</title>
+<meta name="description" content="Carte plein écran des feux détectés par satellite en France, avec barre temporelle et horaires des passages satellite (NASA FIRMS).">
 <meta name="robots" content="index, follow, max-image-preview:large">
 <meta name="theme-color" content="#1B2A6B">
 <link rel="canonical" href="https://feuxgironde.vercel.app/emprise.html">
@@ -15,12 +15,91 @@
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; }
-  #map { position: fixed; inset: 0; width: 100vw; height: 100vh; background: #0b0f1a; }
+  :root { --rail: 78px; --panneau: 320px; }
 
+  html, body { margin: 0; padding: 0; height: 100%; }
+
+  /* La carte commence après la colonne : rien ne se chevauche, et les
+     contrôles de zoom de Leaflet restent atteignables. */
+  #map {
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    left: var(--rail);
+    background: #0b0f1a;
+  }
+
+  /* ── Colonne de gauche ──────────────────────────────────────────────── */
+  .rail {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    z-index: 1002;
+    width: var(--rail);
+    background: #10151f;
+    border-right: 1px solid rgba(255, 255, 255, .08);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    padding-top: 10px;
+    gap: 2px;
+  }
+  .rail-item {
+    appearance: none;
+    border: 0;
+    background: none;
+    color: #8b95a7;
+    cursor: pointer;
+    padding: 11px 4px 9px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    font: 600 10.5px/1.2 -apple-system, "Segoe UI", Arial, sans-serif;
+    border-left: 3px solid transparent;
+  }
+  .rail-item svg { width: 24px; height: 24px; display: block; }
+  .rail-item:hover { color: #cfd6e2; background: rgba(255, 255, 255, .04); }
+  .rail-item.is-actif { color: #fff; background: rgba(255, 255, 255, .07); border-left-color: #d7191c; }
+
+  /* ── Panneau, adossé à la colonne ───────────────────────────────────── */
+  .panneau {
+    position: fixed;
+    top: 0; bottom: 0;
+    left: var(--rail);
+    z-index: 1001;
+    width: min(var(--panneau), calc(100vw - var(--rail)));
+    overflow-y: auto;
+    background: rgba(11, 15, 26, .96);
+    border-right: 1px solid rgba(255, 255, 255, .08);
+    color: #fff;
+    padding: 20px 20px 26px;
+    font: 400 13px/1.45 -apple-system, "Segoe UI", Arial, sans-serif;
+    box-shadow: 6px 0 26px rgba(0, 0, 0, .45);
+  }
+  .panneau[hidden] { display: none; }
+  .panneau h2 {
+    margin: 0;
+    font: 600 15px/1.3 "Archivo", -apple-system, "Segoe UI", Arial, sans-serif;
+  }
+  .panneau .prochain {
+    font: 700 24px/1.2 "Archivo", -apple-system, "Segoe UI", Arial, sans-serif;
+    color: #ff6b3d;
+    margin: 10px 0 3px;
+  }
+  .panneau .detail { color: #9aa5b8; font-size: 12px; }
+  .panneau table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  .panneau th, .panneau td {
+    text-align: left;
+    padding: 6px 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, .09);
+  }
+  .panneau th { color: #9aa5b8; font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; }
+  .panneau td:first-child { font-variant-numeric: tabular-nums; font-weight: 600; width: 38%; }
+  .panneau .note { color: #7d8798; font-size: 11px; margin-top: 14px; }
+
+  /* ── Barre temporelle, centrée sur la carte et non sur l'écran ──────── */
   .barre-temps {
     position: fixed;
-    left: 50%;
+    left: calc(var(--rail) + (100vw - var(--rail)) / 2);
     bottom: 18px;
     transform: translateX(-50%);
     z-index: 1000;
@@ -33,7 +112,7 @@
     border-radius: 999px;
     font: 600 13px/1.2 -apple-system, "Segoe UI", Arial, sans-serif;
     box-shadow: 0 4px 18px rgba(0, 0, 0, .35);
-    width: min(92vw, 560px);
+    width: min(calc(100vw - var(--rail) - 32px), 560px);
   }
   .barre-temps[hidden] { display: none; }
   .barre-temps button {
@@ -48,117 +127,83 @@
     font-size: 13px;
     line-height: 1;
   }
-  .barre-temps input[type="range"] {
-    flex: 1;
-    accent-color: #d7191c;
-    min-width: 0;
-  }
-  .barre-temps span {
-    flex: 0 0 auto;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
+  .barre-temps input[type="range"] { flex: 1; accent-color: #d7191c; min-width: 0; }
+  .barre-temps span { flex: 0 0 auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  /* Panneau ouvert : la barre se recentre sur la carte restée visible, sinon
+     son bouton de lecture passerait dessous. */
+  body.panneau-ouvert .barre-temps {
+    left: calc(var(--rail) + var(--panneau) + (100vw - var(--rail) - var(--panneau)) / 2);
+    width: min(calc(100vw - var(--rail) - var(--panneau) - 32px), 560px);
   }
 
-  /* Bouton satellite : même hauteur que la barre temporelle, posé juste à sa
-     droite pour rester dans le même regard, sans empiéter dessus. */
-  .bouton-satellite {
-    position: fixed;
-    left: 50%;
-    bottom: 18px;
-    margin-left: calc(min(92vw, 560px) / 2 + 10px);
-    z-index: 1000;
-    width: 46px;
-    height: 46px;
-    border: none;
-    border-radius: 50%;
-    background: rgba(11, 15, 26, .82);
-    color: #fff;
-    font-size: 20px;
-    line-height: 1;
-    cursor: pointer;
-    box-shadow: 0 4px 18px rgba(0, 0, 0, .35);
+  @media (max-width: 640px) {
+    :root { --rail: 60px; }
+    .rail-item { font-size: 9.5px; padding: 9px 2px 8px; }
+    .rail-item svg { width: 21px; height: 21px; }
+    /* Le panneau occupe alors toute la largeur restante : il ne reste pas de
+       place pour la barre, la masquer vaut mieux que la laisser dessous. */
+    body.panneau-ouvert .barre-temps { display: none; }
   }
-  .bouton-satellite:hover { background: rgba(30, 40, 60, .92); }
-
-  .fenetre-satellite {
-    position: fixed;
-    left: 50%;
-    bottom: 78px;
-    transform: translateX(-50%);
-    z-index: 1001;
-    width: min(92vw, 420px);
-    max-height: min(70vh, 560px);
-    overflow-y: auto;
-    background: rgba(11, 15, 26, .95);
-    color: #fff;
-    padding: 18px 20px;
-    border-radius: 14px;
-    font: 400 13px/1.45 -apple-system, "Segoe UI", Arial, sans-serif;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, .5);
-  }
-  .fenetre-satellite[hidden] { display: none; }
-  .fenetre-satellite h2 {
-    margin: 0 0 2px;
-    font: 600 15px/1.3 "Archivo", -apple-system, "Segoe UI", Arial, sans-serif;
-  }
-  .fenetre-satellite .fermer {
-    position: absolute;
-    top: 10px;
-    right: 12px;
-    border: none;
-    background: none;
-    color: #9aa5b8;
-    font-size: 20px;
-    line-height: 1;
-    cursor: pointer;
-  }
-  .fenetre-satellite .prochain {
-    font: 700 22px/1.2 "Archivo", -apple-system, "Segoe UI", Arial, sans-serif;
-    color: #ff6b3d;
-    margin: 10px 0 2px;
-  }
-  .fenetre-satellite .detail { color: #9aa5b8; font-size: 12px; }
-  .fenetre-satellite table { width: 100%; border-collapse: collapse; margin-top: 6px; }
-  .fenetre-satellite th, .fenetre-satellite td {
-    text-align: left;
-    padding: 5px 4px;
-    border-bottom: 1px solid rgba(255, 255, 255, .09);
-  }
-  .fenetre-satellite th { color: #9aa5b8; font-weight: 600; font-size: 11px; text-transform: uppercase; }
-  .fenetre-satellite td:first-child { font-variant-numeric: tabular-nums; font-weight: 600; }
-  .fenetre-satellite .note { color: #7d8798; font-size: 11px; margin-top: 12px; }
 </style>
 </head>
 <body>
 
+<nav class="rail" aria-label="Vues">
+  <button type="button" class="rail-item is-actif" id="onglet-carte" aria-pressed="true">
+    <!-- Carte pliée : trois volets, deux plis. -->
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M9 3 3 5.4v15.1L9 18l6 3 6-2.4V3.4L15 6 9 3Z"/>
+      <path d="M9 3v15"/>
+      <path d="M15 6v15"/>
+    </svg>
+    <span>Carte</span>
+  </button>
+
+  <button type="button" class="rail-item" id="onglet-satellite" aria-pressed="false"
+          aria-controls="panneau-satellite">
+    <!-- Satellite : corps central, deux panneaux solaires rainurés, mât et
+         antenne. Formes volontairement peu nombreuses et larges — à 24 px, un
+         dessin plus détaillé se referme en tache illisible. -->
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="9" y="9.6" width="6" height="6" rx="1"/>
+      <rect x="1.4" y="10.6" width="5.4" height="4" rx=".7"/>
+      <rect x="17.2" y="10.6" width="5.4" height="4" rx=".7"/>
+      <path d="M4.1 10.6v4M19.9 10.6v4"/>
+      <path d="M6.8 12.6H9M15 12.6h2.2"/>
+      <path d="M12 9.6V6.6"/>
+      <circle cx="12" cy="5.1" r="1.4"/>
+    </svg>
+    <span>Satellite</span>
+  </button>
+</nav>
+
 <div id="map"></div>
+
+<div class="panneau" id="panneau-satellite" role="region" aria-label="Passages satellite" hidden>
+  <h2>Prochain passage satellite</h2>
+  <div class="prochain" id="sat-prochain">—</div>
+  <div class="detail" id="sat-detail"></div>
+
+  <div id="sat-bloc-planning" hidden>
+    <h2 style="margin-top:20px">Passages observés dans la journée</h2>
+    <table>
+      <thead><tr><th>Heure</th><th>Satellite</th></tr></thead>
+      <tbody id="sat-planning"></tbody>
+    </table>
+  </div>
+
+  <p class="note">Heures françaises. Horaires réels déduits des détections des
+    derniers jours (VIIRS SNPP/NOAA-20/NOAA-21, MODIS Terra/Aqua, Landsat) —
+    une habitude observée, pas une prévision d’orbite.</p>
+</div>
 
 <div class="barre-temps" id="barre" hidden>
   <button type="button" id="lecture" aria-label="Lecture de la progression">▶</button>
   <input type="range" id="curseur" min="0" max="0" step="1" value="0">
   <span id="etiquette"></span>
-</div>
-
-<button type="button" class="bouton-satellite" id="bouton-satellite"
-        aria-label="Passages satellite" title="Passages satellite"
-        aria-expanded="false" aria-controls="fenetre-satellite">🛰</button>
-
-<div class="fenetre-satellite" id="fenetre-satellite" role="dialog"
-     aria-label="Passages satellite" hidden>
-  <button type="button" class="fermer" id="fermer-satellite" aria-label="Fermer">×</button>
-  <h2>Prochain passage satellite</h2>
-  <div class="prochain" id="sat-prochain">—</div>
-  <div class="detail" id="sat-detail"></div>
-  <div id="sat-bloc-planning" hidden>
-    <h2 style="margin-top:18px">Passages observés dans la journée</h2>
-    <table>
-      <thead><tr><th>Heure (française)</th><th>Satellite</th></tr></thead>
-      <tbody id="sat-planning"></tbody>
-    </table>
-  </div>
-  <p class="note">Horaires réels déduits des détections des derniers jours
-    (VIIRS SNPP/NOAA-20/NOAA-21, MODIS Terra/Aqua, Landsat) — une habitude
-    observée, pas une prévision d’orbite.</p>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
