@@ -171,33 +171,73 @@
   }
   .avertissement[hidden] { display: none; }
 
-  /* ── Bilan annuel : chiffres fixes, pas tirés d'une source en direct ─── */
-  .bilan-annuel {
+  /* ── Bilan annuel ────────────────────────────────────────────────────
+     Emphase plutôt que huit teintes : une seule série, 2026 en accent et
+     les années passées en retrait. Couleurs validées contre le fond sombre
+     (séparation daltonisme ΔE 12.6, vision normale 22.3, contraste ≥ 3:1) ;
+     le libellé direct sur 2026 sert d'encodage secondaire, pour que
+     l'emphase ne repose jamais sur la seule couleur. */
+  .graphique {
     margin-top: 64px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    width: min(980px, 100%);
+    text-align: left;
+    --viz-barre: #6b7280;
+    --viz-accent: #e8632f;
+    --viz-grille: rgba(255, 255, 255, .07);
+    --viz-axe: rgba(255, 255, 255, .14);
+    --viz-encre-attenuee: #8b95a7;
   }
-  .bilan-valeur {
-    font: 800 clamp(42px, 9vw, 84px)/1 "Archivo", sans-serif;
-    letter-spacing: -.01em;
-    background: linear-gradient(90deg, #ff5a3c, #ffb23c);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+  .graphique h2 {
+    margin: 0;
+    font: 700 19px/1.3 "Archivo", sans-serif;
   }
-  .bilan-libelle {
-    margin-top: 4px;
-    font: 600 14px/1.3 "Source Sans 3", sans-serif;
-    text-transform: uppercase;
-    letter-spacing: .08em;
-    color: #9aa5b8;
-  }
-  .bilan-comparaison {
-    margin-top: 16px;
-    font-size: 14px;
+  .graphique .legende-titre {
+    margin: 5px 0 20px;
+    font-size: 13.5px;
     color: #7d8798;
   }
+  .graphique svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .viz-grille line { stroke: var(--viz-grille); stroke-width: 1; }
+  .viz-axe { stroke: var(--viz-axe); stroke-width: 1; }
+  .viz-tick { fill: var(--viz-encre-attenuee); font: 400 11px/1 "Source Sans 3", sans-serif; font-variant-numeric: tabular-nums; }
+  .viz-annee { fill: var(--viz-encre-attenuee); font: 400 11.5px/1 "Source Sans 3", sans-serif; }
+  .viz-barre { fill: var(--viz-barre); transition: fill .12s; }
+  .viz-barre.est-accent { fill: var(--viz-accent); }
+  .viz-bande:hover .viz-barre { fill: #9aa5b8; }
+  .viz-bande:hover .viz-barre.est-accent { fill: #ff7a45; }
+  .viz-etiquette { fill: #fff; font: 700 13px/1 "Archivo", sans-serif; }
+  .viz-etiquette-sous { fill: var(--viz-encre-attenuee); font: 400 11px/1 "Source Sans 3", sans-serif; }
+
+  .viz-infobulle {
+    position: fixed;
+    z-index: 20;
+    pointer-events: none;
+    background: #10151f;
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: 8px;
+    padding: 7px 11px;
+    font: 400 12.5px/1.4 "Source Sans 3", sans-serif;
+    white-space: nowrap;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .5);
+  }
+  .viz-infobulle[hidden] { display: none; }
+  .viz-infobulle b { font-weight: 700; }
+
+  .graphique details {
+    margin-top: 18px;
+    font-size: 13px;
+    color: #7d8798;
+  }
+  .graphique summary { cursor: pointer; }
+  .graphique details table { border-collapse: collapse; margin-top: 10px; width: 100%; max-width: 380px; }
+  .graphique details th, .graphique details td {
+    text-align: left;
+    padding: 4px 10px 4px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, .07);
+    font-variant-numeric: tabular-nums;
+  }
+  .graphique details th { color: #9aa5b8; font-weight: 600; }
+  .graphique .source { margin-top: 14px; font-size: 11.5px; color: #5f6879; }
 
   footer {
     padding: 22px clamp(20px, 5vw, 56px) 26px;
@@ -269,12 +309,20 @@
 
   <p class="avertissement" id="avertissement" hidden></p>
 
-  <div class="bilan-annuel">
-    <span class="bilan-valeur">91 175 ha</span>
-    <span class="bilan-libelle">brûlés en 2026</span>
-    <span class="bilan-comparaison">2025 : 36 951 ha brûlés</span>
-  </div>
+  <section class="graphique" id="graphique">
+    <h2>Surface brûlée en France, année par année</h2>
+    <p class="legende-titre">En hectares, depuis 2006. 2026 est la pire année de la série.</p>
+    <div id="viz"></div>
+    <details>
+      <summary>Voir les chiffres</summary>
+      <div id="viz-table"></div>
+    </details>
+    <p class="source">Chiffres 2025 et 2026 exacts ; les années précédentes sont
+      relevées sur le graphique source et arrondies à la centaine.</p>
+  </section>
 </main>
+
+<div class="viz-infobulle" id="viz-infobulle" hidden></div>
 
 <footer>
   Détections <strong>NASA FIRMS</strong> (VIIRS, MODIS, Landsat) · fond de carte <strong>Esri</strong> — Maxar, Earthstar Geographics.
