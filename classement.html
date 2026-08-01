@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Classement des feux en France par année — surface brûlée depuis 2006</title>
-<meta name="description" content="Surface brûlée en France, année par année, depuis 2006 : le classement complet, 2026 étant la pire année de la série.">
+<title>Classement des feux en France — par année et plus grands incendies</title>
+<meta name="description" content="Surface brûlée en France, année par année depuis 2006, et le classement des plus grands incendies jamais enregistrés, jusqu'à 2026.">
 <meta name="robots" content="index, follow, max-image-preview:large">
 <meta name="theme-color" content="#0b0f1a">
 <link rel="canonical" href="https://feux-france.vercel.app/classement.html">
@@ -17,8 +17,8 @@
 <meta property="og:site_name" content="Feux en France">
 <meta property="og:locale" content="fr_FR">
 <meta property="og:url" content="https://feux-france.vercel.app/classement.html">
-<meta property="og:title" content="Classement des feux en France par année">
-<meta property="og:description" content="Surface brûlée en France, année par année, depuis 2006.">
+<meta property="og:title" content="Classement des feux en France">
+<meta property="og:description" content="Surface brûlée par année depuis 2006, et le classement des plus grands incendies jamais enregistrés.">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -148,6 +148,77 @@
   .graphique details th { color: #9aa5b8; font-weight: 600; }
   .graphique .source { margin-top: 14px; font-size: 11.5px; color: #5f6879; }
 
+  /* ── Plus grands brasiers ────────────────────────────────────────────
+     Un classement par événement, pas par année : plusieurs des plus gros
+     foyers viennent de la même année (2022, 2026), ce que le graphique du
+     dessus — une seule barre par an — ne peut pas montrer. */
+  .brasiers {
+    margin-top: clamp(56px, 8vw, 80px);
+    padding-top: clamp(40px, 6vw, 56px);
+    border-top: 1px solid rgba(255, 255, 255, .08);
+  }
+  .brasiers h2 {
+    margin: 0;
+    font: 700 19px/1.3 "Archivo", sans-serif;
+  }
+  .brasiers .legende-titre {
+    margin: 5px 0 24px;
+    font-size: 13.5px;
+    color: #7d8798;
+  }
+  .brasiers-liste {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .brasier {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 16px;
+    padding: 16px 18px;
+    background: rgba(255, 255, 255, .03);
+    border: 1px solid rgba(255, 255, 255, .07);
+    border-radius: 12px;
+  }
+  .brasier-rang {
+    font: 800 21px/1.2 "Archivo", sans-serif;
+    color: #5f6879;
+  }
+  .brasier-entete {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    font: 700 15.5px/1.3 "Archivo", sans-serif;
+  }
+  .brasier-annee { color: #e8632f; }
+  /* 2026 en accent vif, cohérent avec la barre du graphique du dessus. */
+  .brasier-annee.est-2026 { color: #ff8a4d; }
+  .brasier-lieu {
+    font: 400 13px/1.3 "Source Sans 3", sans-serif;
+    color: #7d8798;
+  }
+  .brasier-sous {
+    margin-top: 3px;
+    font-size: 12.5px;
+    color: #9aa5b8;
+    font-style: italic;
+  }
+  .brasier-surface {
+    margin-top: 7px;
+    font: 700 15px/1 "Archivo", sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+  .brasier-texte {
+    margin: 7px 0 0;
+    font-size: 13.5px;
+    color: #b7bfcc;
+  }
+  .brasiers .source { margin-top: 16px; font-size: 11.5px; color: #5f6879; }
+
   footer {
     padding: 22px clamp(20px, 5vw, 56px) 26px;
     text-align: center;
@@ -189,6 +260,140 @@
     </details>
     <p class="source">Chiffres 2025 et 2026 exacts ; les années précédentes sont
       relevées sur le graphique source et arrondies à la centaine.</p>
+  </section>
+
+  <section class="brasiers" id="brasiers">
+    <h2>Classement des plus grands brasiers en France</h2>
+    <p class="legende-titre">Mis à jour avec 2026 — un seul incendie, pas le cumul d'une année.</p>
+    <ol class="brasiers-liste">
+      <li class="brasier">
+        <div class="brasier-rang">1</div>
+        <div class="brasier-corps">
+          <div class="brasier-entete">
+            <span class="brasier-annee">1949</span>
+            <span>Forêt des Landes</span>
+            <span class="brasier-lieu">(Gironde / Landes)</span>
+          </div>
+          <div class="brasier-sous">Record historique</div>
+          <div class="brasier-surface">≈ 52 000 hectares</div>
+          <p class="brasier-texte">Le plus grand et le plus meurtrier des incendies modernes en France (82 morts).</p>
+        </div>
+      </li>
+      <li class="brasier">
+        <div class="brasier-rang">2</div>
+        <div class="brasier-corps">
+          <div class="brasier-entete">
+            <span class="brasier-annee est-2026">2026</span>
+            <span>Forêt des Landes / Saumos</span>
+            <span class="brasier-lieu">(Gironde / Landes) — juillet 2026</span>
+          </div>
+          <div class="brasier-surface">≈ 42 000 hectares</div>
+          <p class="brasier-texte">Parti de Saumos en Gironde fin juillet 2026, cet incendie s'est propagé à
+            grande vitesse à travers les forêts de pins denses vers le bassin d'Arcachon et les Landes. Plus de
+            220 000 personnes ont été évacuées et les fumées ont atteint l'agglomération bordelaise.</p>
+        </div>
+      </li>
+      <li class="brasier">
+        <div class="brasier-rang">3</div>
+        <div class="brasier-corps">
+          <div class="brasier-entete">
+            <span class="brasier-annee">2022</span>
+            <span>Landiras 1</span>
+            <span class="brasier-lieu">(Gironde)</span>
+          </div>
+          <div class="brasier-surface">≈ 12 500 hectares</div>
+          <p class="brasier-texte">Le plus grand foyer du bel été caniculaire de 2022.</p>
+        </div>
+      </li>
+      <li class="brasier">
+        <div class="brasier-rang">4</div>
+        <div class="brasier-corps">
+          <div class="brasier-entete">
+            <span class="brasier-annee">1990</span>
+            <span>Massif des Maures</span>
+            <span class="brasier-lieu">(Var)</span>
+          </div>
+          <div class="brasier-surface">≈ 12 500 hectares</div>
+          <p class="brasier-texte">Bilan d'un seul foyer majeur lors d'un été où 23 000 ha ont brûlé dans le
+            département.</p>
+        </div>
+      </li>
+      <li class="brasier">
+        <div class="brasier-rang">5</div>
+        <div class="brasier-corps">
+          <div class="brasier-entete">
+            <span class="brasier-annee">2022</span>
+            <span>Landiras 2</span>
+            <span class="brasier-lieu">(Gironde)</span>
+          </div>
+          <div class="brasier-surface">≈ 7 100 hectares</div>
+          <p class="brasier-texte">La reprise massive du brasier girondin un mois après le premier épisode.</p>
+        </div>
+      </li>
+      <li class="brasier">
+        <div class="brasier-rang">6</div>
+        <div class="brasier-corps">
+          <div class="brasier-entete">
+            <span class="brasier-annee">2021</span>
+            <span>Gonfaron / Massif des Maures</span>
+            <span class="brasier-lieu">(Var)</span>
+          </div>
+          <div class="brasier-surface">≈ 7 000 hectares</div>
+          <p class="brasier-texte">Parti d'une aire d'autoroute en août 2021.</p>
+        </div>
+      </li>
+      <li class="brasier">
+        <div class="brasier-rang">7</div>
+        <div class="brasier-corps">
+          <div class="brasier-entete">
+            <span class="brasier-annee">1976</span>
+            <span>Corbère-les-Cabanes</span>
+            <span class="brasier-lieu">(Pyrénées-Orientales)</span>
+          </div>
+          <div class="brasier-surface">≈ 6 600 hectares</div>
+        </div>
+      </li>
+      <li class="brasier">
+        <div class="brasier-rang">8</div>
+        <div class="brasier-corps">
+          <div class="brasier-entete">
+            <span class="brasier-annee">2022</span>
+            <span>La Teste-de-Buch</span>
+            <span class="brasier-lieu">(Gironde)</span>
+          </div>
+          <div class="brasier-surface">≈ 5 700 hectares</div>
+          <p class="brasier-texte">Le feu emblématique qui avait ravagé la forêt usagère près de la Dune du
+            Pilat.</p>
+        </div>
+      </li>
+      <li class="brasier">
+        <div class="brasier-rang">9</div>
+        <div class="brasier-corps">
+          <div class="brasier-entete">
+            <span class="brasier-annee">2003</span>
+            <span>Vidauban / Massif des Maures</span>
+            <span class="brasier-lieu">(Var)</span>
+          </div>
+          <div class="brasier-surface">≈ 5 600 hectares</div>
+        </div>
+      </li>
+      <li class="brasier">
+        <div class="brasier-rang">10</div>
+        <div class="brasier-corps">
+          <div class="brasier-entete">
+            <span class="brasier-annee est-2026">2026</span>
+            <span>Pyrénées-Orientales</span>
+            <span class="brasier-lieu">— juillet 2026</span>
+          </div>
+          <div class="brasier-surface">≈ 4 900 hectares</div>
+          <p class="brasier-texte">Un autre brasier majeur de l'été 2026, ayant nécessité l'évacuation de
+            12 000 personnes.</p>
+        </div>
+      </li>
+    </ol>
+    <p class="source">Estimations rassemblées par recoupement de sources historiques et de presse, pas une
+      statistique officielle unique — à prendre comme ordre de grandeur, surtout pour les incendies d'avant les
+      mesures satellite modernes.</p>
   </section>
 </main>
 
