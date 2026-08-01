@@ -182,7 +182,7 @@
       var annee = a[0], valeur = a[1];
       var accent = annee === ACCENT_ANNEE;
       return {
-        xLabel: (annee % 5 === 0 || accent) ? String(annee) : null,
+        xLabel: String(annee),
         valeur: valeur,
         accent: accent,
         aria: annee + ' : ' + fr(valeur) + ' hectares',
@@ -215,7 +215,7 @@
         + '<br>' + fr(b.surface) + ' ha'
         + (b.texte ? '<div class="viz-infobulle-texte">' + echapper(b.texte) + '</div>' : '');
       return {
-        xLabel: '#' + rang,
+        xLabel: String(b.annee),
         valeur: b.surface,
         accent: accent,
         aria: 'Rang ' + rang + ', ' + b.annee + ', ' + b.titre + ' ' + b.lieu + ', ' + fr(b.surface) + ' hectares',
