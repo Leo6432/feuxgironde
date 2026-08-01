@@ -309,9 +309,13 @@
         Object.keys(marqueurs).forEach(function (icao) { if (!vus[icao]) supprimerAvion(icao); });
 
         if (!(d.avions || []).length) {
-          afficherInfo('Aucun avion de la Sécurité civile repéré pour le moment.');
+          // Deux causes bien différentes du même vide : pas de feu du tout,
+          // ou un feu actif mais aucun avion suivi juste à proximité.
+          afficherInfo(d.foyersActifs
+            ? 'Un feu est actif, mais aucun avion repéré à proximité pour le moment.'
+            : 'Aucun feu actif en ce moment — pas d’avion à suivre.');
         } else if (d.perime) {
-          afficherInfo('Dernière position connue — OpenSky ne répond plus depuis quelques instants.');
+          afficherInfo('Dernière position connue — airplanes.live ne répond plus depuis quelques instants.');
         } else {
           afficherInfo(null);
         }

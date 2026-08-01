@@ -1,4 +1,5 @@
-// Position en direct des avions de la Sécurité civile, pour la carte.
+// Position en direct des avions de la Sécurité civile PRÈS D'UN FEU ACTIF,
+// pour la carte.
 //
 // Voir lib/avionsFeu.js pour l'origine des données (airplanes.live) et les
 // réserves sur l'identification des avions — best-effort, non vérifiée en
@@ -7,6 +8,12 @@
 // (reçus/retenus/erreur, indicatifs vus) — c'est le seul moyen de savoir ce
 // que répond réellement airplanes.live sans y avoir accès direct.
 //
+// Appartenir à la flotte ne dit pas ce que l'avion fait à l'instant — un
+// EC145 fait du secours en montagne toute l'année, indépendamment des feux.
+// La réponse est donc filtrée à la proximité d'un foyer actif connu (voir
+// filtrerPresDesFeux dans lib/avionsFeu.js) : hors de tout feu, la liste est
+// vide par construction, ce n'est pas une panne.
+//
 // La réponse est mise en cache brièvement et partagée entre tous les
 // visiteurs (une visite ne doit pas coûter un appel à elle seule). Si
 // airplanes.live ne répond pas, la dernière position connue est resservie
@@ -14,7 +21,7 @@
 // volait il y a une minute vole probablement encore.
 
 const { getClient } = require('../lib/redis');
-const { recupererAvions } = require('../lib/avionsFeu');
+const { recupererAvions, filtrerPresDesFeux } = require('../lib/avionsFeu');
 
 const CLE_CACHE = 'avions:etat:v1';
 const CLE_SECOURS = 'avions:secours:v1';
@@ -72,8 +79,17 @@ module.exports = async (req, res) => {
     return;
   }
 
+  // En diagnostic, le filtre feu n'est appliqué qu'à titre indicatif : le but
+  // de ?diag=1 est de déboguer l'identification (les motifs de PATRONS), pas
+  // la proximité — masquer un avion mal identifié à cause d'un feu trop loin
+  // rendrait le diagnostic inutile pour ce qu'il sert.
+  const { avions: avionsPresDunFeu, foyersActifs } = await filtrerPresDesFeux(donnees.avions, redis);
+
   const etat = {
-    ok: true, instant: donnees.instant, avions: donnees.avions, perime: false,
+    ok: true, instant: donnees.instant,
+    avions: diag ? donnees.avions : avionsPresDunFeu,
+    foyersActifs,
+    perime: false,
     parQuadrant: diag ? donnees.parQuadrant : undefined,
   };
 
