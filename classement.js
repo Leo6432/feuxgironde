@@ -14,7 +14,7 @@
     [2011, 4700], [2012, 3200], [2013, 900], [2014, 4300], [2015, 2100],
     [2016, 10700], [2017, 20700], [2018, 2700], [2019, 43600], [2020, 14600],
     [2021, 30500], [2022, 66200], [2023, 22400], [2024, 12300], [2025, 36951],
-    [2026, 91175],
+    [2026, 93490],
   ];
   var ACCENT_ANNEE = 2026;
 
@@ -36,7 +36,7 @@
     { annee: 1990, titre: 'Massif des Maures', lieu: '(Var)',
       surface: 12500, texte: 'Bilan d’un seul foyer majeur lors d’un été où 23 000 ha ont brûlé dans le département.' },
     { annee: 2022, titre: 'Landiras 2', lieu: '(Gironde)',
-      surface: 7100, texte: 'La reprise massive du brasier girondin un mois après le premier épisode.' },
+      surface: 7100, texte: 'La reprise massive de l’incendie girondin un mois après le premier épisode.' },
     { annee: 2021, titre: 'Gonfaron / Massif des Maures', lieu: '(Var)',
       surface: 7000, texte: 'Parti d’une aire d’autoroute en août 2021.' },
     { annee: 1976, titre: 'Corbère-les-Cabanes', lieu: '(Pyrénées-Orientales)',
@@ -46,7 +46,7 @@
     { annee: 2003, titre: 'Vidauban / Massif des Maures', lieu: '(Var)',
       surface: 5600, texte: null },
     { annee: 2026, titre: 'Pyrénées-Orientales', lieu: '— juillet 2026',
-      surface: 4900, texte: 'Un autre brasier majeur de l’été 2026, ayant nécessité l’évacuation de 12 000 personnes.' },
+      surface: 4900, texte: 'Un autre incendie majeur de l’été 2026, ayant nécessité l’évacuation de 12 000 personnes.' },
   ];
 
   function fr(n) { return n.toLocaleString('fr-FR'); }
