@@ -1,5 +1,5 @@
-// Position en direct des avions 100 % dédiés à la lutte contre le feu
-// (Canadair, Dash 8 — voir lib/avionsFeu.js), pour la carte.
+// Position en direct des avions et hélicoptères confirmés de la flotte de la
+// Sécurité civile (voir lib/avionsFeu.js), pour la carte.
 //
 // Voir lib/avionsFeu.js pour l'origine des données (airplanes.live) et les
 // réserves sur l'identification des avions — best-effort, non vérifiée en
@@ -8,12 +8,14 @@
 // (reçus/retenus/erreur, indicatifs vus) — c'est le seul moyen de savoir ce
 // que répond réellement airplanes.live sans y avoir accès direct.
 //
-// Pas de filtre de proximité à un feu : un Canadair à 300 km de tout foyer,
-// en transit vers un plan d'eau ou en entraînement, reste un moyen de lutte
-// contre l'incendie — ce n'est pas du tourisme. C'est le TYPE d'appareil qui
-// est filtré (voir PATRONS dans lib/avionsFeu.js), pas sa position du
-// moment : les hélicoptères polyvalents comme l'EC145, qui font aussi du
-// secours en montagne toute l'année, sont exclus à la source.
+// Pas de filtre de proximité à un feu, ni de filtre sur la mission : un
+// Canadair à 300 km de tout foyer, en transit ou à l'entraînement, reste un
+// moyen de lutte, et un EC145 en évacuation sanitaire reste un moyen de la
+// Sécurité civile. C'est l'appartenance à la flotte (voir PATRONS dans
+// lib/avionsFeu.js) qui décide, jamais la position ou l'activité du moment —
+// cohérent avec le fonctionnement observé d'un site de référence,
+// github.com/rozierguillaume/flamap, qui affiche de même les hélicoptères
+// polyvalents (juste distingués par une icône, jamais exclus).
 //
 // La réponse est mise en cache brièvement et partagée entre tous les
 // visiteurs (une visite ne doit pas coûter un appel à elle seule). Si
