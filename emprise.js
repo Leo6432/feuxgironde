@@ -208,6 +208,134 @@
       });
   }
 
+  // ── Avions de la Sécurité civile ─────────────────────────────────────
+  // Un calque superposable, indépendant du choix Carte/Satellite : on peut le
+  // laisser actif en consultant le panneau satellite. Positions et
+  // identification best-effort via OpenSky Network, voir lib/avionsFeu.js.
+  (function avionsFeu() {
+    var bouton = document.getElementById('onglet-avions');
+    var info = document.getElementById('avions-info');
+    if (!bouton) return;
+
+    var ICONE_AVION = '<svg viewBox="0 0 24 24" fill="#eaf2fb" aria-hidden="true">'
+      + '<path d="M12 2c-.7 0-1.2.5-1.2 1.2v5.4L3.4 12.4v1.8l7.4-2.3v4.6l-2.1 1.5v1.5l2.9-.8.6-.1.6.1 '
+      + '2.9.8v-1.5l-2.1-1.5v-4.6l7.4 2.3v-1.8l-7.4-3.8V3.2C13.2 2.5 12.7 2 12 2Z"/></svg>';
+
+    var DUREE_SONDAGE_MS = 20000;
+    // ~13 min de sillage à ce rythme : assez pour lire une trajectoire, pas
+    // assez pour alourdir la carte sur un vol de plusieurs heures.
+    var POINTS_TRACE_MAX = 40;
+
+    var actif = false;
+    var couche = null;
+    var minuteurAvions = null;
+    var marqueurs = {};   // icao24 -> L.Marker
+    var traces = {};      // icao24 -> L.Polyline
+    var points = {};      // icao24 -> [[lat, lon], ...]
+
+    function afficherInfo(texte) {
+      if (!texte) { info.hidden = true; return; }
+      info.textContent = texte;
+      info.hidden = false;
+    }
+
+    function etiquette(a) {
+      var morceaux = [];
+      if (a.altitudeM != null) morceaux.push(a.altitudeM.toLocaleString('fr-FR') + ' m');
+      if (a.vitesseKmh != null) morceaux.push(a.vitesseKmh + ' km/h');
+      return '<div class="avion-etiquette"><span class="indicatif">' + a.indicatif + '</span>'
+        + (morceaux.length ? '<div class="detail">' + morceaux.join(' · ') + '</div>' : '')
+        + '</div>';
+    }
+
+    function supprimerAvion(icao) {
+      if (marqueurs[icao]) { couche.removeLayer(marqueurs[icao]); delete marqueurs[icao]; }
+      if (traces[icao]) { couche.removeLayer(traces[icao]); delete traces[icao]; }
+      delete points[icao];
+    }
+
+    function poserOuDeplacer(a) {
+      var latlon = [a.lat, a.lon];
+
+      if (!points[a.icao24]) points[a.icao24] = [];
+      var suite = points[a.icao24];
+      var dernier = suite[suite.length - 1];
+      // Un avion au parking peut rester immobile ; ne pas empiler des points
+      // identiques évite un sillage qui n'en est pas un.
+      if (!dernier || dernier[0] !== latlon[0] || dernier[1] !== latlon[1]) {
+        suite.push(latlon);
+        if (suite.length > POINTS_TRACE_MAX) suite.shift();
+      }
+
+      if (suite.length > 1) {
+        if (traces[a.icao24]) traces[a.icao24].setLatLngs(suite);
+        else {
+          traces[a.icao24] = L.polyline(suite, {
+            color: '#2fb8e8', weight: 2, opacity: .65, dashArray: '1 6', lineCap: 'round',
+          }).addTo(couche);
+        }
+      }
+
+      if (marqueurs[a.icao24]) {
+        marqueurs[a.icao24].setLatLng(latlon);
+        marqueurs[a.icao24].setIcon(icone(a));
+        marqueurs[a.icao24].setTooltipContent(etiquette(a));
+      } else {
+        marqueurs[a.icao24] = L.marker(latlon, { icon: icone(a) })
+          .bindTooltip(etiquette(a), { direction: 'top', offset: [0, -12], opacity: .96 })
+          .addTo(couche);
+      }
+    }
+
+    function icone(a) {
+      var cap = a.capDeg != null ? a.capDeg : 0;
+      return L.divIcon({
+        className: '', iconSize: [22, 22], iconAnchor: [11, 11],
+        html: '<div class="avion-icone" style="transform:rotate(' + cap + 'deg)">' + ICONE_AVION + '</div>',
+      });
+    }
+
+    function charger() {
+      if (!actif) return;
+      fetch('/api/avions').then(function (r) { return r.json(); }).then(function (d) {
+        if (!actif || !d) return;
+        if (!d.ok) {
+          afficherInfo('Suivi des avions indisponible' + (d.raison ? ' (' + d.raison + ')' : '') + '.');
+          return;
+        }
+
+        var vus = {};
+        (d.avions || []).forEach(function (a) { vus[a.icao24] = true; poserOuDeplacer(a); });
+        Object.keys(marqueurs).forEach(function (icao) { if (!vus[icao]) supprimerAvion(icao); });
+
+        if (!(d.avions || []).length) {
+          afficherInfo('Aucun avion de la Sécurité civile repéré pour le moment.');
+        } else if (d.perime) {
+          afficherInfo('Dernière position connue — OpenSky ne répond plus depuis quelques instants.');
+        } else {
+          afficherInfo(null);
+        }
+      }).catch(function () { if (actif) afficherInfo('Suivi des avions indisponible.'); });
+    }
+
+    bouton.addEventListener('click', function () {
+      actif = !actif;
+      bouton.classList.toggle('is-actif', actif);
+      bouton.setAttribute('aria-pressed', actif ? 'true' : 'false');
+
+      if (actif) {
+        if (!couche) couche = L.layerGroup();
+        couche.addTo(carte);
+        charger();
+        minuteurAvions = setInterval(charger, DUREE_SONDAGE_MS);
+      } else {
+        if (minuteurAvions) { clearInterval(minuteurAvions); minuteurAvions = null; }
+        if (couche) carte.removeLayer(couche);
+        afficherInfo(null);
+      }
+    });
+  })();
+
   function arreter() {
     if (minuteur) { clearInterval(minuteur); minuteur = null; }
     boutonLecture.textContent = '▶';
