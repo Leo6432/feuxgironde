@@ -138,5 +138,59 @@
     });
   }
 
+  // ── Bandeaux chiffre-clé ────────────────────────────────────────────
+  // Même langage que le graphique juste en dessous : mini-courbe, pas de
+  // second axe, pas de graduation — un bandeau résume, il ne redouble pas
+  // l'information détaillée qui suit.
+  //
+  // Rang 1 à 10 du classement des brasiers (voir la liste dans
+  // classement.html) : seules les magnitudes sont reprises ici, pour la
+  // mini-courbe du bandeau — le texte de chaque événement reste dans le HTML,
+  // il n'y a pas de raison de le dupliquer en JS.
+  var BRASIERS = [52000, 42000, 12500, 12500, 7100, 7000, 6600, 5700, 5600, 4900];
+
+  function sparkline(valeurs) {
+    var L = 160, H = 54, m = 4;
+    var max = Math.max.apply(null, valeurs);
+    var min = Math.min.apply(null, valeurs);
+    var x = function (i) { return m + i * (L - 2 * m) / (valeurs.length - 1); };
+    var y = function (v) { return H - m - (v - min) / ((max - min) || 1) * (H - 2 * m); };
+
+    var d = valeurs.map(function (v, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); }).join('');
+    var derniereI = valeurs.length - 1;
+    var points = valeurs.map(function (v, i) {
+      // Le dernier point porte l'accent : c'est lui que le nombre du bandeau
+      // commente, les précédents ne servent qu'à situer la tendance.
+      var accent = i === derniereI;
+      return '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="' + (accent ? 2.6 : 1.8)
+        + '" fill="' + (accent ? '#ff8a4d' : '#e8632f') + '"/>';
+    }).join('');
+
+    return '<svg viewBox="0 0 ' + L + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">'
+      + '<path d="' + d + '" fill="none" stroke="#e8632f" stroke-width="1.6" '
+      + 'stroke-linejoin="round" stroke-linecap="round"/>' + points + '</svg>';
+  }
+
+  function bandeau(id, kicker, nombre, statut, valeurs) {
+    var hote = document.getElementById(id);
+    if (!hote) return;
+    hote.innerHTML = '<div class="bandeau-texte">'
+      + '<div class="bandeau-kicker">' + kicker + '</div>'
+      + '<div class="bandeau-nombre">' + nombre + '</div>'
+      + '<div class="bandeau-statut">' + statut + '</div>'
+      + '</div>'
+      + '<div class="bandeau-spark">' + sparkline(valeurs)
+      + '<div class="bandeau-plage">' + fr(valeurs[0]) + ' → ' + fr(valeurs[valeurs.length - 1]) + ' ha</div></div>';
+  }
+
+  var derniereAnnee = ANNEES[ANNEES.length - 1];
+  bandeau('bandeau-annee', 'France · bilan ' + derniereAnnee[0],
+    fr(derniereAnnee[1]) + ' hectares', 'Pire année de la série',
+    ANNEES.map(function (a) { return a[1]; }));
+
+  bandeau('bandeau-record', 'France · record historique',
+    fr(BRASIERS[0]) + ' hectares', 'Forêt des Landes, 1949',
+    BRASIERS);
+
   dessinerGraphique();
 })();
