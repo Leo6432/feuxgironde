@@ -16,24 +16,84 @@
     [2021, 30500], [2022, 66200], [2023, 22400], [2024, 12300], [2025, 36951],
     [2026, 91175],
   ];
-  var ACCENT = 2026;
+  var ACCENT_ANNEE = 2026;
+
+  // ── Plus grands brasiers ──────────────────────────────────────────────
+  // Une seule source pour le graphique ET la liste détaillée en dessous
+  // (voir dessinerBrasiers) : pas de texte dupliqué entre le HTML et le JS.
+  // Chiffres rassemblés par recoupement de sources historiques et de presse
+  // (voir la note en bas de section) — 1949 et 2026 mis à part, ce sont des
+  // ordres de grandeur, pas une statistique officielle unique.
+  var BRASIERS = [
+    { annee: 1949, titre: 'Forêt des Landes', lieu: '(Gironde / Landes)', sousTitre: 'Record historique',
+      surface: 52000, texte: 'Le plus grand et le plus meurtrier des incendies modernes en France (82 morts).' },
+    { annee: 2026, titre: 'Forêt des Landes / Saumos', lieu: '(Gironde / Landes) — juillet 2026',
+      surface: 42000, texte: 'Parti de Saumos en Gironde fin juillet 2026, cet incendie s’est propagé à '
+        + 'grande vitesse à travers les forêts de pins denses vers le bassin d’Arcachon et les Landes. '
+        + 'Plus de 220 000 personnes ont été évacuées et les fumées ont atteint l’agglomération bordelaise.' },
+    { annee: 2022, titre: 'Landiras 1', lieu: '(Gironde)',
+      surface: 12500, texte: 'Le plus grand foyer du bel été caniculaire de 2022.' },
+    { annee: 1990, titre: 'Massif des Maures', lieu: '(Var)',
+      surface: 12500, texte: 'Bilan d’un seul foyer majeur lors d’un été où 23 000 ha ont brûlé dans le département.' },
+    { annee: 2022, titre: 'Landiras 2', lieu: '(Gironde)',
+      surface: 7100, texte: 'La reprise massive du brasier girondin un mois après le premier épisode.' },
+    { annee: 2021, titre: 'Gonfaron / Massif des Maures', lieu: '(Var)',
+      surface: 7000, texte: 'Parti d’une aire d’autoroute en août 2021.' },
+    { annee: 1976, titre: 'Corbère-les-Cabanes', lieu: '(Pyrénées-Orientales)',
+      surface: 6600, texte: null },
+    { annee: 2022, titre: 'La Teste-de-Buch', lieu: '(Gironde)',
+      surface: 5700, texte: 'Le feu emblématique qui avait ravagé la forêt usagère près de la Dune du Pilat.' },
+    { annee: 2003, titre: 'Vidauban / Massif des Maures', lieu: '(Var)',
+      surface: 5600, texte: null },
+    { annee: 2026, titre: 'Pyrénées-Orientales', lieu: '— juillet 2026',
+      surface: 4900, texte: 'Un autre brasier majeur de l’été 2026, ayant nécessité l’évacuation de 12 000 personnes.' },
+  ];
 
   function fr(n) { return n.toLocaleString('fr-FR'); }
-
-  // Barre à sommet arrondi (4px) et pied carré : le pied doit rester posé net
-  // sur la ligne de base, un rx global arrondirait aussi les angles du bas.
-  function cheminBarre(x, y, largeur, hauteur, rayon) {
-    var r = Math.min(rayon, hauteur, largeur / 2);
-    return 'M' + x + ' ' + (y + hauteur)
-      + 'V' + (y + r)
-      + 'a' + r + ' ' + r + ' 0 0 1 ' + r + ' ' + -r
-      + 'h' + (largeur - 2 * r)
-      + 'a' + r + ' ' + r + ' 0 0 1 ' + r + ' ' + r
-      + 'V' + (y + hauteur) + 'Z';
+  function echapper(s) {
+    return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; });
   }
 
-  function dessinerGraphique() {
-    var hote = document.getElementById('viz');
+  // ── Bandeaux chiffre-clé ────────────────────────────────────────────
+  // Juste le nombre qui résume la section : la tendance elle-même est
+  // maintenant portée par le grand graphique juste en dessous, pas par le
+  // bandeau (voir l'historique : une mini-courbe redondante avec le grand
+  // graphique n'apportait rien, à part faire deux fois la même lecture).
+  function bandeau(id, kicker, nombre, statut) {
+    var hote = document.getElementById(id);
+    if (!hote) return;
+    hote.innerHTML = '<div class="bandeau-kicker">' + echapper(kicker) + '</div>'
+      + '<div class="bandeau-nombre">' + nombre + '</div>'
+      + '<div class="bandeau-statut">' + echapper(statut) + '</div>';
+  }
+
+  // ── Graphique en ligne, cliquable ───────────────────────────────────
+  // Un seul rendu partagé par les deux sections : les points, l'axe, la
+  // grille et l'interaction (survol ET clic — un doigt sur mobile ne
+  // déclenche jamais mouseenter) sont identiques, seules les données et les
+  // légendes de bulle changent.
+  var bulle = document.getElementById('viz-infobulle');
+  var pointEpingle = null;   // le groupe <g> actuellement épinglé par un clic, ou null
+
+  function masquerBulle() {
+    if (!bulle) return;
+    bulle.hidden = true;
+  }
+  function afficherBulle(html, x, y) {
+    if (!bulle) return;
+    bulle.innerHTML = html;
+    bulle.style.left = x + 'px';
+    bulle.style.top = y + 'px';
+    bulle.hidden = false;
+  }
+  // Un clic hors de tout point désépingle : sinon la bulle resterait affichée
+  // indéfiniment après un clic ailleurs sur la page.
+  document.addEventListener('click', function () {
+    if (pointEpingle) { pointEpingle = null; masquerBulle(); }
+  });
+
+  function dessinerLigneCliquable(idHote, points, opts) {
+    var hote = document.getElementById(idHote);
     if (!hote) return;
 
     var L = 960, H = 380;
@@ -41,78 +101,103 @@
     var largeurTrace = L - margeG - margeD;
     var hauteurTrace = H - margeHaut - margeBas;
 
-    var MAX = 100000;                       // borne ronde, au-dessus du pic
-    var bande = largeurTrace / ANNEES.length;
-    var largeurBarre = Math.min(24, bande - 2);   // ≤ 24px, et 2px d'air minimum
-    var y = function (v) { return margeHaut + hauteurTrace * (1 - v / MAX); };
+    var max = opts.max;
+    var pas = largeurTrace / Math.max(1, points.length - 1);
+    var x = function (i) { return margeG + i * pas; };
+    var y = function (v) { return margeHaut + hauteurTrace * (1 - v / max); };
 
-    var svg = ['<svg viewBox="0 0 ' + L + ' ' + H + '" role="img" '
-      + 'aria-label="Surface brûlée en France par année, de 2006 à 2026, en hectares">'];
+    var svg = ['<svg viewBox="0 0 ' + L + ' ' + H + '" role="img" aria-label="' + echapper(opts.ariaLabelSvg) + '">'];
 
-    // Dégradé vertical léger : la barre s'éclaircit vers son sommet, ce qui la
-    // détache du fond sans ajouter d'encre. L'écart reste faible — un dégradé
-    // marqué ferait croire à une information supplémentaire qui n'existe pas.
-    svg.push('<defs>'
-      + '<linearGradient id="degradeBarre" x1="0" y1="0" x2="0" y2="1">'
-      + '<stop offset="0%" stop-color="#b0633a"/><stop offset="100%" stop-color="#96502f"/>'
-      + '</linearGradient>'
-      + '<linearGradient id="degradeAccent" x1="0" y1="0" x2="0" y2="1">'
-      + '<stop offset="0%" stop-color="#ff8a4d"/><stop offset="100%" stop-color="#e8632f"/>'
-      + '</linearGradient>'
-      + '</defs>');
-
-    // Grille horizontale + graduations, à valeurs rondes.
     svg.push('<g class="viz-grille">');
-    [0, 25000, 50000, 75000, 100000].forEach(function (v) {
+    opts.paliers.forEach(function (v) {
       var yy = y(v);
       svg.push('<line x1="' + margeG + '" y1="' + yy + '" x2="' + (L - margeD) + '" y2="' + yy + '"/>');
-      svg.push('<text class="viz-tick" x="' + (margeG - 10) + '" y="' + (yy + 4)
-        + '" text-anchor="end">' + fr(v) + '</text>');
+      svg.push('<text class="viz-tick" x="' + (margeG - 10) + '" y="' + (yy + 4) + '" text-anchor="end">' + fr(v) + '</text>');
     });
     svg.push('</g>');
     svg.push('<line class="viz-axe" x1="' + margeG + '" y1="' + y(0) + '" x2="' + (L - margeD) + '" y2="' + y(0) + '"/>');
 
-    ANNEES.forEach(function (a, n) {
-      var annee = a[0], valeur = a[1];
-      var xBande = margeG + n * bande;
-      var xBarre = xBande + (bande - largeurBarre) / 2;
-      var hauteur = Math.max(2, hauteurTrace * (valeur / MAX));
-      var yBarre = y(valeur);
-      var accent = annee === ACCENT;
+    var d = points.map(function (p, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.valeur).toFixed(1); }).join('');
+    svg.push('<path class="viz-ligne" d="' + d + '"/>');
 
-      svg.push('<g class="viz-bande" data-annee="' + annee + '" data-valeur="' + valeur + '">');
-      // Zone de survol sur toute la hauteur : viser une barre de 2px de haut
-      // (2013) serait sinon impossible.
-      svg.push('<rect x="' + xBande + '" y="' + margeHaut + '" width="' + bande
-        + '" height="' + hauteurTrace + '" fill="transparent"/>');
-      svg.push('<path class="viz-barre' + (accent ? ' est-accent' : '') + '" d="'
-        + cheminBarre(xBarre, yBarre, largeurBarre, hauteur, 4) + '"/>');
-      svg.push('</g>');
-
-      // Étiquettes d'années espacées : les 21 côte à côte se chevaucheraient.
-      if (annee % 5 === 0 || accent) {
-        svg.push('<text class="viz-annee" x="' + (xBande + bande / 2) + '" y="' + (H - 12)
-          + '" text-anchor="middle">' + annee + '</text>');
+    points.forEach(function (p, i) {
+      var xx = x(i), yy = y(p.valeur);
+      if (p.xLabel) {
+        svg.push('<text class="viz-annee" x="' + xx + '" y="' + (H - 12) + '" text-anchor="middle">' + echapper(p.xLabel) + '</text>');
       }
+      // Cible invisible plus large que le point : viser un rond de 3px avec
+      // le doigt serait sinon illusoire.
+      svg.push('<g class="viz-point-groupe" tabindex="0" role="button" aria-label="' + echapper(p.aria) + '" data-i="' + i + '">'
+        + '<circle class="viz-cible" cx="' + xx + '" cy="' + yy + '" r="14"/>'
+        + '<circle class="viz-point' + (p.accent ? ' est-accent' : '') + '" cx="' + xx + '" cy="' + yy + '" r="' + (p.accent ? 4.5 : 3) + '"/>'
+        + '</g>');
     });
 
-    // Étiquette directe sur la seule année qui porte l'histoire — et non une
-    // valeur sur chaque barre, qui ne se lirait plus.
-    var derniere = ANNEES[ANNEES.length - 1];
-    var avantDerniere = ANNEES[ANNEES.length - 2];
-    // Posée à gauche de la barre, pas au-dessus : la barre monte presque au
-    // sommet du tracé, une étiquette centrée dessus déborderait du cadre.
-    var xAccent = margeG + (ANNEES.length - 1) * bande + bande / 2 - largeurBarre / 2 - 10;
-    var facteur = (derniere[1] / avantDerniere[1]).toFixed(1).replace('.', ',');
-    svg.push('<text class="viz-etiquette" x="' + xAccent + '" y="' + (y(derniere[1]) + 4)
-      + '" text-anchor="end">' + fr(derniere[1]) + ' ha</text>');
-    svg.push('<text class="viz-etiquette-sous" x="' + xAccent + '" y="' + (y(derniere[1]) + 20)
-      + '" text-anchor="end">' + facteur + '× l’an dernier</text>');
+    if (opts.etiquette) {
+      var dernier = points[points.length - 1];
+      var xEtiq = x(points.length - 1) - 10;
+      svg.push('<text class="viz-etiquette" x="' + xEtiq + '" y="' + (y(dernier.valeur) - 12) + '" text-anchor="end">' + opts.etiquette + '</text>');
+      if (opts.etiquetteSous) {
+        svg.push('<text class="viz-etiquette-sous" x="' + xEtiq + '" y="' + (y(dernier.valeur) + 4) + '" text-anchor="end">' + opts.etiquetteSous + '</text>');
+      }
+    }
 
     svg.push('</svg>');
     hote.innerHTML = svg.join('');
 
-    // Tableau équivalent : la même donnée reste accessible sans le graphique.
+    hote.querySelectorAll('.viz-point-groupe').forEach(function (g) {
+      var p = points[Number(g.dataset.i)];
+
+      g.addEventListener('mouseenter', function (e) {
+        if (!pointEpingle) afficherBulle(p.infobulle, e.clientX + 14, e.clientY - 36);
+      });
+      g.addEventListener('mousemove', function (e) {
+        if (!pointEpingle) { bulle.style.left = (e.clientX + 14) + 'px'; bulle.style.top = (e.clientY - 36) + 'px'; }
+      });
+      g.addEventListener('mouseleave', function () {
+        if (!pointEpingle) masquerBulle();
+      });
+
+      // Le clic épingle la bulle près du point plutôt que du curseur : au
+      // clavier ou au doigt, il n'y a pas de position de souris à suivre.
+      g.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (pointEpingle === g) { pointEpingle = null; masquerBulle(); return; }
+        pointEpingle = g;
+        var r = g.querySelector('.viz-cible').getBoundingClientRect();
+        afficherBulle(p.infobulle, r.left + r.width / 2 + 12, r.top - 8);
+      });
+      g.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); g.click(); }
+      });
+    });
+  }
+
+  function dessinerAnnees() {
+    var derniere = ANNEES[ANNEES.length - 1];
+    var avantDerniere = ANNEES[ANNEES.length - 2];
+    var facteur = (derniere[1] / avantDerniere[1]).toFixed(1).replace('.', ',');
+
+    var points = ANNEES.map(function (a) {
+      var annee = a[0], valeur = a[1];
+      var accent = annee === ACCENT_ANNEE;
+      return {
+        xLabel: (annee % 5 === 0 || accent) ? String(annee) : null,
+        valeur: valeur,
+        accent: accent,
+        aria: annee + ' : ' + fr(valeur) + ' hectares',
+        infobulle: '<b>' + annee + '</b> · ' + fr(valeur) + ' ha' + (accent ? '<br>pire année de la série' : ''),
+      };
+    });
+
+    dessinerLigneCliquable('viz', points, {
+      max: 100000,
+      paliers: [0, 25000, 50000, 75000, 100000],
+      ariaLabelSvg: 'Surface brûlée en France par année, de 2006 à 2026, en hectares — cliquez un point pour le détail',
+      etiquette: fr(derniere[1]) + ' ha',
+      etiquetteSous: facteur + '× l’an dernier',
+    });
+
     var tab = document.getElementById('viz-table');
     if (tab) {
       tab.innerHTML = '<table><thead><tr><th>Année</th><th>Hectares brûlés</th></tr></thead><tbody>'
@@ -120,77 +205,57 @@
           return '<tr><td>' + a[0] + '</td><td>' + fr(a[1]) + '</td></tr>';
         }).join('') + '</tbody></table>';
     }
+  }
 
-    // Infobulle au survol : un graphique en HTML est interactif par nature.
-    var bulle = document.getElementById('viz-infobulle');
-    if (!bulle) return;
-    hote.querySelectorAll('.viz-bande').forEach(function (g) {
-      g.addEventListener('mouseenter', function () {
-        bulle.innerHTML = '<b>' + g.dataset.annee + '</b> · '
-          + fr(Number(g.dataset.valeur)) + ' ha';
-        bulle.hidden = false;
-      });
-      g.addEventListener('mousemove', function (e) {
-        bulle.style.left = (e.clientX + 14) + 'px';
-        bulle.style.top = (e.clientY - 36) + 'px';
-      });
-      g.addEventListener('mouseleave', function () { bulle.hidden = true; });
+  function dessinerBrasiers() {
+    var max = 55000;
+    var points = BRASIERS.map(function (b, i) {
+      var rang = i + 1, accent = b.annee === ACCENT_ANNEE;
+      var detail = '<b>#' + rang + ' — ' + b.annee + '</b><br>' + echapper(b.titre) + ' ' + echapper(b.lieu)
+        + '<br>' + fr(b.surface) + ' ha'
+        + (b.texte ? '<div class="viz-infobulle-texte">' + echapper(b.texte) + '</div>' : '');
+      return {
+        xLabel: '#' + rang,
+        valeur: b.surface,
+        accent: accent,
+        aria: 'Rang ' + rang + ', ' + b.annee + ', ' + b.titre + ' ' + b.lieu + ', ' + fr(b.surface) + ' hectares',
+        infobulle: detail,
+      };
     });
-  }
 
-  // ── Bandeaux chiffre-clé ────────────────────────────────────────────
-  // Même langage que le graphique juste en dessous : mini-courbe, pas de
-  // second axe, pas de graduation — un bandeau résume, il ne redouble pas
-  // l'information détaillée qui suit.
-  //
-  // Rang 1 à 10 du classement des brasiers (voir la liste dans
-  // classement.html) : seules les magnitudes sont reprises ici, pour la
-  // mini-courbe du bandeau — le texte de chaque événement reste dans le HTML,
-  // il n'y a pas de raison de le dupliquer en JS.
-  var BRASIERS = [52000, 42000, 12500, 12500, 7100, 7000, 6600, 5700, 5600, 4900];
+    // Pas d'étiquette directe ici : le record (rang 1) est au premier point,
+    // à gauche, alors que dessinerLigneCliquable ne sait poser une étiquette
+    // que sur le dernier — et le bandeau juste au-dessus le dit déjà.
+    dessinerLigneCliquable('viz-brasiers', points, {
+      max: max,
+      paliers: [0, 10000, 20000, 30000, 40000, 50000],
+      ariaLabelSvg: 'Les dix plus grands incendies recensés en France, en hectares — cliquez un point pour le lieu et le détail',
+    });
 
-  function sparkline(valeurs) {
-    var L = 160, H = 54, m = 4;
-    var max = Math.max.apply(null, valeurs);
-    var min = Math.min.apply(null, valeurs);
-    var x = function (i) { return m + i * (L - 2 * m) / (valeurs.length - 1); };
-    var y = function (v) { return H - m - (v - min) / ((max - min) || 1) * (H - 2 * m); };
-
-    var d = valeurs.map(function (v, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); }).join('');
-    var derniereI = valeurs.length - 1;
-    var points = valeurs.map(function (v, i) {
-      // Le dernier point porte l'accent : c'est lui que le nombre du bandeau
-      // commente, les précédents ne servent qu'à situer la tendance.
-      var accent = i === derniereI;
-      return '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="' + (accent ? 2.6 : 1.8)
-        + '" fill="' + (accent ? '#ff8a4d' : '#e8632f') + '"/>';
-    }).join('');
-
-    return '<svg viewBox="0 0 ' + L + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">'
-      + '<path d="' + d + '" fill="none" stroke="#e8632f" stroke-width="1.6" '
-      + 'stroke-linejoin="round" stroke-linecap="round"/>' + points + '</svg>';
-  }
-
-  function bandeau(id, kicker, nombre, statut, valeurs) {
-    var hote = document.getElementById(id);
-    if (!hote) return;
-    hote.innerHTML = '<div class="bandeau-texte">'
-      + '<div class="bandeau-kicker">' + kicker + '</div>'
-      + '<div class="bandeau-nombre">' + nombre + '</div>'
-      + '<div class="bandeau-statut">' + statut + '</div>'
-      + '</div>'
-      + '<div class="bandeau-spark">' + sparkline(valeurs)
-      + '<div class="bandeau-plage">' + fr(valeurs[0]) + ' → ' + fr(valeurs[valeurs.length - 1]) + ' ha</div></div>';
+    var liste = document.getElementById('brasiers-liste');
+    if (liste) {
+      liste.innerHTML = BRASIERS.map(function (b, i) {
+        var rang = i + 1;
+        return '<li class="brasier">'
+          + '<div class="brasier-rang">' + rang + '</div>'
+          + '<div class="brasier-corps">'
+          + '<div class="brasier-entete">'
+          + '<span class="brasier-annee' + (b.annee === ACCENT_ANNEE ? ' est-2026' : '') + '">' + b.annee + '</span>'
+          + '<span>' + echapper(b.titre) + '</span>'
+          + '<span class="brasier-lieu">' + echapper(b.lieu) + '</span>'
+          + '</div>'
+          + (b.sousTitre ? '<div class="brasier-sous">' + echapper(b.sousTitre) + '</div>' : '')
+          + '<div class="brasier-surface">≈ ' + fr(b.surface) + ' hectares</div>'
+          + (b.texte ? '<p class="brasier-texte">' + echapper(b.texte) + '</p>' : '')
+          + '</div></li>';
+      }).join('');
+    }
   }
 
   var derniereAnnee = ANNEES[ANNEES.length - 1];
-  bandeau('bandeau-annee', 'France · bilan ' + derniereAnnee[0],
-    fr(derniereAnnee[1]) + ' hectares', 'Pire année de la série',
-    ANNEES.map(function (a) { return a[1]; }));
+  bandeau('bandeau-annee', 'France · bilan ' + derniereAnnee[0], fr(derniereAnnee[1]) + ' hectares', 'Pire année de la série');
+  bandeau('bandeau-record', 'France · record historique', fr(BRASIERS[0].surface) + ' hectares', BRASIERS[0].titre + ', ' + BRASIERS[0].annee);
 
-  bandeau('bandeau-record', 'France · record historique',
-    fr(BRASIERS[0]) + ' hectares', 'Forêt des Landes, 1949',
-    BRASIERS);
-
-  dessinerGraphique();
+  dessinerAnnees();
+  dessinerBrasiers();
 })();

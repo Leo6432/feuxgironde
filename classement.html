@@ -84,17 +84,12 @@
   }
 
   /* ── Bandeau chiffre-clé ─────────────────────────────────────────────
-     Un seul nombre qui résume la section, avec une mini-tendance à côté :
-     avant de lire vingt et une barres ou dix lignes, on sait déjà où on en
-     est. Carte plutôt que pleine largeur, pour rester un résumé et non un
-     doublon du contenu détaillé juste en dessous. */
+     Un seul nombre qui résume la section, en intro du grand graphique qui
+     suit juste en dessous — c'est ce graphique qui porte la tendance
+     maintenant, le bandeau n'a plus besoin de la redire en miniature. */
   .bandeau {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 24px;
-    margin: 18px 0 26px;
-    padding: 22px 26px;
+    margin: 18px 0 22px;
+    padding: 20px 26px;
     border-radius: 14px;
     background:
       radial-gradient(ellipse 280px 170px at 100% 0%, rgba(215, 25, 28, .18), transparent 65%),
@@ -116,20 +111,6 @@
     margin-top: 6px;
     font: 700 14.5px/1.3 "Archivo", sans-serif;
     color: #ff8a63;
-  }
-  .bandeau-spark { flex: 0 0 auto; width: clamp(120px, 18vw, 190px); }
-  .bandeau-spark svg { display: block; width: 100%; height: auto; overflow: visible; }
-  .bandeau-plage {
-    margin-top: 4px;
-    font-size: 11px;
-    color: #7d8798;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
-  @media (max-width: 620px) {
-    .bandeau { flex-direction: column; align-items: flex-start; }
-    .bandeau-spark { width: 100%; max-width: 220px; }
-    .bandeau-plage { text-align: left; }
   }
 
   /* ── Bilan annuel ────────────────────────────────────────────────────
@@ -160,26 +141,38 @@
   .viz-axe { stroke: var(--viz-axe); stroke-width: 1; }
   .viz-tick { fill: var(--viz-encre-attenuee); font: 400 11px/1 "Source Sans 3", sans-serif; font-variant-numeric: tabular-nums; }
   .viz-annee { fill: var(--viz-encre-attenuee); font: 400 11.5px/1 "Source Sans 3", sans-serif; }
-  .viz-barre { fill: url(#degradeBarre); transition: opacity .12s; }
-  .viz-barre.est-accent { fill: url(#degradeAccent); }
-  .viz-bande:hover .viz-barre { opacity: .78; }
   .viz-etiquette { fill: #fff; font: 700 13px/1 "Archivo", sans-serif; }
   .viz-etiquette-sous { fill: var(--viz-encre-attenuee); font: 400 11px/1 "Source Sans 3", sans-serif; }
+
+  /* ── Graphique en ligne, cliquable ───────────────────────────────────
+     Une seule courbe, comme le bandeau au-dessus le laissait deviner — mais
+     ici en grand, avec un point par donnée. Chaque point se clique (pas
+     seulement un survol : au doigt, sur mobile, il n'y a pas de survol). */
+  .viz-ligne { fill: none; stroke: var(--viz-barre); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .viz-point { fill: var(--viz-barre); }
+  .viz-point.est-accent { fill: var(--viz-accent); }
+  .viz-cible { fill: transparent; cursor: pointer; }
+  .viz-cible:hover ~ .viz-point, .viz-point-groupe:hover .viz-point { r: 6; }
+  .viz-point-groupe { cursor: pointer; }
+  .viz-point-groupe:hover .viz-point, .viz-point-groupe:focus-visible .viz-point { r: 6.5; }
+  .viz-point-groupe:focus-visible { outline: none; }
+  .viz-point-groupe:focus-visible .viz-cible { stroke: #fff; stroke-width: 2; fill: rgba(255,255,255,.08); }
 
   .viz-infobulle {
     position: fixed;
     z-index: 20;
     pointer-events: none;
+    max-width: 250px;
     background: #10151f;
     border: 1px solid rgba(255, 255, 255, .14);
     border-radius: 8px;
-    padding: 7px 11px;
+    padding: 9px 12px;
     font: 400 12.5px/1.4 "Source Sans 3", sans-serif;
-    white-space: nowrap;
     box-shadow: 0 6px 20px rgba(0, 0, 0, .5);
   }
   .viz-infobulle[hidden] { display: none; }
   .viz-infobulle b { font-weight: 700; }
+  .viz-infobulle-texte { margin-top: 5px; color: #9aa5b8; font-size: 11.5px; }
 
   .graphique details {
     margin-top: 18px;
@@ -303,7 +296,8 @@
   <div class="bandeau" id="bandeau-annee"></div>
 
   <section class="graphique" id="graphique">
-    <p class="legende-titre">Surface brûlée en France, en hectares, depuis 2006. 2026 est la pire année de la série.</p>
+    <p class="legende-titre">Surface brûlée en France, en hectares, depuis 2006. 2026 est la pire année de la
+      série. Cliquez un point pour voir le détail de l'année.</p>
     <div id="viz"></div>
     <details>
       <summary>Voir les chiffres</summary>
@@ -316,133 +310,12 @@
   <section class="brasiers" id="brasiers">
     <h2>Classement des plus grands brasiers en France</h2>
     <div class="bandeau" id="bandeau-record"></div>
-    <p class="legende-titre">Mis à jour avec 2026 — un seul incendie, pas le cumul d'une année.</p>
-    <ol class="brasiers-liste">
-      <li class="brasier">
-        <div class="brasier-rang">1</div>
-        <div class="brasier-corps">
-          <div class="brasier-entete">
-            <span class="brasier-annee">1949</span>
-            <span>Forêt des Landes</span>
-            <span class="brasier-lieu">(Gironde / Landes)</span>
-          </div>
-          <div class="brasier-sous">Record historique</div>
-          <div class="brasier-surface">≈ 52 000 hectares</div>
-          <p class="brasier-texte">Le plus grand et le plus meurtrier des incendies modernes en France (82 morts).</p>
-        </div>
-      </li>
-      <li class="brasier">
-        <div class="brasier-rang">2</div>
-        <div class="brasier-corps">
-          <div class="brasier-entete">
-            <span class="brasier-annee est-2026">2026</span>
-            <span>Forêt des Landes / Saumos</span>
-            <span class="brasier-lieu">(Gironde / Landes) — juillet 2026</span>
-          </div>
-          <div class="brasier-surface">≈ 42 000 hectares</div>
-          <p class="brasier-texte">Parti de Saumos en Gironde fin juillet 2026, cet incendie s'est propagé à
-            grande vitesse à travers les forêts de pins denses vers le bassin d'Arcachon et les Landes. Plus de
-            220 000 personnes ont été évacuées et les fumées ont atteint l'agglomération bordelaise.</p>
-        </div>
-      </li>
-      <li class="brasier">
-        <div class="brasier-rang">3</div>
-        <div class="brasier-corps">
-          <div class="brasier-entete">
-            <span class="brasier-annee">2022</span>
-            <span>Landiras 1</span>
-            <span class="brasier-lieu">(Gironde)</span>
-          </div>
-          <div class="brasier-surface">≈ 12 500 hectares</div>
-          <p class="brasier-texte">Le plus grand foyer du bel été caniculaire de 2022.</p>
-        </div>
-      </li>
-      <li class="brasier">
-        <div class="brasier-rang">4</div>
-        <div class="brasier-corps">
-          <div class="brasier-entete">
-            <span class="brasier-annee">1990</span>
-            <span>Massif des Maures</span>
-            <span class="brasier-lieu">(Var)</span>
-          </div>
-          <div class="brasier-surface">≈ 12 500 hectares</div>
-          <p class="brasier-texte">Bilan d'un seul foyer majeur lors d'un été où 23 000 ha ont brûlé dans le
-            département.</p>
-        </div>
-      </li>
-      <li class="brasier">
-        <div class="brasier-rang">5</div>
-        <div class="brasier-corps">
-          <div class="brasier-entete">
-            <span class="brasier-annee">2022</span>
-            <span>Landiras 2</span>
-            <span class="brasier-lieu">(Gironde)</span>
-          </div>
-          <div class="brasier-surface">≈ 7 100 hectares</div>
-          <p class="brasier-texte">La reprise massive du brasier girondin un mois après le premier épisode.</p>
-        </div>
-      </li>
-      <li class="brasier">
-        <div class="brasier-rang">6</div>
-        <div class="brasier-corps">
-          <div class="brasier-entete">
-            <span class="brasier-annee">2021</span>
-            <span>Gonfaron / Massif des Maures</span>
-            <span class="brasier-lieu">(Var)</span>
-          </div>
-          <div class="brasier-surface">≈ 7 000 hectares</div>
-          <p class="brasier-texte">Parti d'une aire d'autoroute en août 2021.</p>
-        </div>
-      </li>
-      <li class="brasier">
-        <div class="brasier-rang">7</div>
-        <div class="brasier-corps">
-          <div class="brasier-entete">
-            <span class="brasier-annee">1976</span>
-            <span>Corbère-les-Cabanes</span>
-            <span class="brasier-lieu">(Pyrénées-Orientales)</span>
-          </div>
-          <div class="brasier-surface">≈ 6 600 hectares</div>
-        </div>
-      </li>
-      <li class="brasier">
-        <div class="brasier-rang">8</div>
-        <div class="brasier-corps">
-          <div class="brasier-entete">
-            <span class="brasier-annee">2022</span>
-            <span>La Teste-de-Buch</span>
-            <span class="brasier-lieu">(Gironde)</span>
-          </div>
-          <div class="brasier-surface">≈ 5 700 hectares</div>
-          <p class="brasier-texte">Le feu emblématique qui avait ravagé la forêt usagère près de la Dune du
-            Pilat.</p>
-        </div>
-      </li>
-      <li class="brasier">
-        <div class="brasier-rang">9</div>
-        <div class="brasier-corps">
-          <div class="brasier-entete">
-            <span class="brasier-annee">2003</span>
-            <span>Vidauban / Massif des Maures</span>
-            <span class="brasier-lieu">(Var)</span>
-          </div>
-          <div class="brasier-surface">≈ 5 600 hectares</div>
-        </div>
-      </li>
-      <li class="brasier">
-        <div class="brasier-rang">10</div>
-        <div class="brasier-corps">
-          <div class="brasier-entete">
-            <span class="brasier-annee est-2026">2026</span>
-            <span>Pyrénées-Orientales</span>
-            <span class="brasier-lieu">— juillet 2026</span>
-          </div>
-          <div class="brasier-surface">≈ 4 900 hectares</div>
-          <p class="brasier-texte">Un autre brasier majeur de l'été 2026, ayant nécessité l'évacuation de
-            12 000 personnes.</p>
-        </div>
-      </li>
-    </ol>
+    <p class="legende-titre">Mis à jour avec 2026 — un seul incendie, pas le cumul d'une année. Cliquez un
+      point du graphique pour voir le lieu et le détail.</p>
+    <div class="graphique" id="graphique-brasiers">
+      <div id="viz-brasiers"></div>
+    </div>
+    <ol class="brasiers-liste" id="brasiers-liste"></ol>
     <p class="source">Estimations rassemblées par recoupement de sources historiques et de presse, pas une
       statistique officielle unique — à prendre comme ordre de grandeur, surtout pour les incendies d'avant les
       mesures satellite modernes.</p>
