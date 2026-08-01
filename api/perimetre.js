@@ -5,6 +5,9 @@
 // état : d'abord depuis l'archive, et seulement à défaut en le calculant.
 //
 // ?instant=<epoch ms> : la date à rejouer. Sans paramètre, l'état actuel.
+// ?page=<n> : une page de zones (voir lib/etatFeux.js:paginerZones), au lieu
+// des métadonnées. Le client lit `pages` dans la réponse sans page pour
+// savoir combien il lui en faut, et les demande toutes en parallèle.
 
 const { getClient } = require('../lib/redis');
 const etatFeux = require('../lib/etatFeux');
@@ -29,36 +32,46 @@ module.exports = async (req, res) => {
   const maintenant = Date.now();
   const instants = etatFeux.instantsDisponibles(maintenant);
 
+  let page = null;
   // L'instant demandé est recalé sur le cran le plus proche : deux positions
   // voisines du curseur partagent ainsi la même entrée d'archive, au lieu
   // d'en créer une par pixel parcouru.
   let instant = instants[instants.length - 1];
   try {
-    const brut = Number(new URL(req.url, 'http://x').searchParams.get('instant'));
+    const params = new URL(req.url, 'http://x').searchParams;
+    const brut = Number(params.get('instant'));
     if (isFinite(brut) && brut > 0) {
       instant = instants.reduce((meilleur, t) =>
         Math.abs(t - brut) < Math.abs(meilleur - brut) ? t : meilleur, instants[0]);
     }
-  } catch (e) { /* on reste sur l'instant le plus récent */ }
+    // Une page se demande sur l'instant exact renvoyé par la réponse sans
+    // page (voir emprise.js) : pas de recalage ici, sous peine de viser un
+    // cran différent de celui que ses métadonnées décrivent.
+    if (params.has('page')) page = Math.max(0, parseInt(params.get('page'), 10) || 0);
+  } catch (e) { /* on reste sur l'instant le plus récent, sans page */ }
 
   const dernier = instants[instants.length - 1];
   const estDernier = instant === dernier;
 
-  // La maille est commune à toute la barre : sans elle dans la clé, un cran
-  // rendu à 20 m côtoierait un cran rendu à 40 m, et la surface annoncée
-  // sauterait d'un cran à l'autre sans qu'un hectare ait brûlé.
-  const rangConnu = await etatFeux.lireRangMaille(redis);
-
   // Archive d'abord : c'est le chemin normal une fois le précalcul passé.
-  const archive = rangConnu === null ? null : await etatFeux.lireEtat(redis, instant, rangConnu);
-  if (archive) {
-    res.setHeader('X-Cache', 'archive');
-    // La liste des crans évolue avec le temps, alors que l'archive est figée :
-    // on la rafraîchit, sinon la barre resterait bloquée sur les positions
-    // qu'elle avait au moment du calcul.
-    archive.instants = instants;
-    res.status(200).json(archive);
-    return;
+  if (page !== null) {
+    const fragments = await etatFeux.lirePage(redis, instant, page);
+    if (fragments) {
+      res.setHeader('X-Cache', 'archive');
+      res.status(200).json({ ok: true, instant, page, fragments });
+      return;
+    }
+  } else {
+    const archive = await etatFeux.lireEtat(redis, instant);
+    if (archive) {
+      res.setHeader('X-Cache', 'archive');
+      // La liste des crans évolue avec le temps, alors que l'archive est
+      // figée : on la rafraîchit, sinon la barre resterait bloquée sur les
+      // positions qu'elle avait au moment du calcul.
+      archive.instants = instants;
+      res.status(200).json(archive);
+      return;
+    }
   }
 
   let detections;
@@ -85,11 +98,16 @@ module.exports = async (req, res) => {
   // croire que rien ne brûlait à cette date.
   const plusAncienne = points.length ? points[0].ts : null;
   if (plusAncienne !== null && instant < plusAncienne) {
+    if (page !== null) {
+      res.status(200).json({ ok: true, instant, page, fragments: [] });
+      return;
+    }
     res.status(200).json({
       ok: true,
       instant,
       instants,
-      zones: [],
+      zonesMeta: [],
+      pages: 0,
       actifs: [],
       paliers: etatFeux.PALIERS_AGE.map((p) => ({ id: p.id, libelle: p.libelle, couleur: p.couleur })),
       horsArchive: true,
@@ -100,35 +118,29 @@ module.exports = async (req, res) => {
   }
 
   let etat;
-  let rangRetenu = rangConnu;
   try {
-    // Maille encore inconnue : on la fixe sur le cran le plus récent, celui
-    // qui porte le plus de contours. La décider sur le cran demandé donnerait
-    // une finesse différente selon l'endroit où l'on se trouve dans la barre.
-    if (rangRetenu === null) {
-      rangRetenu = etatFeux.etatAuBudget(points, dernier, 0).rangMini;
-      await etatFeux.enregistrerRangMaille(redis, rangRetenu);
-    }
-
-    // Le plancher est imposé, mais la maille peut encore s'élargir si ce cran
-    // déborde quand même : mieux vaut des pixels plus gros qu'une réponse trop
-    // lourde pour partir. Le cas échéant, la maille commune suit.
-    const t = etatFeux.etatAuBudget(points, instant, rangRetenu);
-    if (t.rangMini > rangRetenu) {
-      rangRetenu = t.rangMini;
-      await etatFeux.enregistrerRangMaille(redis, rangRetenu);
-    }
+    const prepare = etatFeux.preparerFoyers(points);
+    etatFeux.avancerJusqua(prepare.foyers, instant, prepare.origine, prepare.pasGrille);
+    const { zones, cellulesTotal } = etatFeux.zonesDepuisFoyers(
+      prepare.foyers, instant, prepare.origine, prepare.pasGrille
+    );
     etat = etatFeux.sortie(
-      instant, instants, t.zones, t.cellulesTotal, t.prepare.foyers.length,
-      etatFeux.foyersActifs(points, instant), geometrieFrance, t.prepare, detections
+      instant, instants, zones, cellulesTotal, prepare.foyers.length,
+      etatFeux.foyersActifs(points, instant), geometrieFrance, prepare, detections
     );
   } catch (e) {
     res.status(200).json({ ok: false, raison: 'calcul des zones échoué : ' + e.message, instants });
     return;
   }
 
-  await etatFeux.enregistrerEtat(redis, instant, etat, estDernier, rangRetenu);
+  const { meta, pages } = await etatFeux.enregistrerEtat(redis, instant, etat, estDernier);
 
   res.setHeader('X-Cache', 'calcul');
-  res.status(200).json(etat);
+  if (page !== null) {
+    res.status(200).json({ ok: true, instant, page, fragments: pages[page] || [] });
+    return;
+  }
+  const enveloppe = Object.assign({}, etat, { zones: undefined, zonesMeta: meta, pages: pages.length, instants });
+  delete enveloppe.zones;
+  res.status(200).json(enveloppe);
 };

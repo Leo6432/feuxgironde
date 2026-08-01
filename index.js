@@ -81,7 +81,7 @@
       texte('v-foyers', String(perimetre.foyers || 0));
       texte('v-foyers-detail', (perimetre.detections || 0).toLocaleString('fr-FR') + ' détections actives');
 
-      var surface = (perimetre.zones || []).reduce(function (s, z) { return s + (z.surfaceKm2 || 0); }, 0);
+      var surface = (perimetre.zonesMeta || []).reduce(function (s, z) { return s + (z.surfaceKm2 || 0); }, 0);
       texte('v-surface', (Math.round(surface * 10) / 10).toLocaleString('fr-FR') + ' km²');
 
       if (perimetre.avertissement) {

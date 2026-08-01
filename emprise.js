@@ -212,6 +212,28 @@
       + (Math.round(total * 10) / 10).toLocaleString('fr-FR') + ' km²';
   }
 
+  // Les zones arrivent en pages (voir lib/etatFeux.js:paginerZones côté
+  // serveur) : une zone par palier d'âge, mais son contour peut être réparti
+  // sur plusieurs pages. On les refusionne ici par palier avant d'afficher,
+  // pour retrouver la forme qu'attend afficher().
+  function fusionnerPages(zonesMeta, listesFragments) {
+    var parPalier = {};
+    (zonesMeta || []).forEach(function (m) {
+      parPalier[m.palier] = {
+        palier: m.palier, libelle: m.libelle, couleur: m.couleur,
+        cellules: m.cellules, surfaceKm2: m.surfaceKm2,
+        surfaces: { type: 'MultiPolygon', coordinates: [] },
+      };
+    });
+    listesFragments.forEach(function (fragments) {
+      (fragments || []).forEach(function (frag) {
+        var z = parPalier[frag.palier];
+        if (z) z.surfaces.coordinates.push.apply(z.surfaces.coordinates, frag.coordinates);
+      });
+    });
+    return (zonesMeta || []).map(function (m) { return parPalier[m.palier]; });
+  }
+
   function charger(instant) {
     var jeton = {};
     enCours = jeton;
@@ -220,6 +242,24 @@
       .then(function (d) {
         if (enCours !== jeton) return null;      // position dépassée
         if (!d || !d.ok) return null;
+        var pages = d.pages || 0;
+        if (!pages) { d.zones = []; return d; }
+        var requetes = [];
+        for (var i = 0; i < pages; i++) {
+          requetes.push(
+            fetch(SOURCE + '?instant=' + d.instant + '&page=' + i)
+              .then(function (r) { return r.json(); })
+              .then(function (p) { return (p && p.ok) ? p.fragments : []; })
+          );
+        }
+        return Promise.all(requetes).then(function (listes) {
+          if (enCours !== jeton) return null;    // position dépassée pendant le chargement des pages
+          d.zones = fusionnerPages(d.zonesMeta, listes);
+          return d;
+        });
+      })
+      .then(function (d) {
+        if (!d) return null;
         afficher(d);
         return d;
       });

@@ -68,36 +68,13 @@ module.exports = async (req, res) => {
   const instants = etatFeux.instantsDisponibles(maintenant);
   const dernier = instants[instants.length - 1];
 
-  // La finesse est arrêtée une fois pour toutes, en sondant le cran le plus
-  // récent — celui qui porte le plus de terrain brûlé, donc le plus de
-  // contours. Tous les crans partagent ensuite la même maille : sans ça, la
-  // carte changerait de résolution rien qu'en déplaçant le curseur.
-  //
-  // La sonde coûte une passe de marquage supplémentaire. C'est le prix d'une
-  // décision prise sur le cran le plus lourd plutôt que sur le premier venu ;
-  // la passe chronologique, elle, ne marque toujours qu'une fois.
-  let rangMini = 0;
-  let octetsSonde = 0;
-  try {
-    // La maille ne peut que s'élargir tant que la clé vit : la saison ajoute du
-    // terrain brûlé, elle n'en retire pas. La laisser osciller d'un jour à
-    // l'autre invaliderait toute l'archive à chaque bascule.
-    const connu = await etatFeux.lireRangMaille(redis);
-    const sonde = etatFeux.etatAuBudget(points, dernier, connu || 0);
-    rangMini = Math.max(sonde.rangMini, connu || 0);
-    octetsSonde = sonde.octets;
-    await etatFeux.enregistrerRangMaille(redis, rangMini);
-  } catch (e) {
-    res.status(200).json({ ok: false, raison: 'sondage de la maille échoué : ' + e.message });
-    return;
-  }
-
-  // Les grilles de la sonde ont été avancées jusqu'au dernier cran ; la passe
-  // chronologique repart donc de grilles vierges. La sonde est ici hors de
-  // portée, sa mémoire peut être reprise avant qu'on en alloue d'autres.
+  // Les zones se transmettent en pages (voir lib/etatFeux.js:paginerZones) :
+  // plus besoin de sonder un plafond de poids commun à tout le pays avant de
+  // démarrer. Chaque foyer prend directement la maille la plus fine qu'il
+  // supporte lui-même.
   let prepare;
   try {
-    prepare = etatFeux.preparerFoyers(points, rangMini);
+    prepare = etatFeux.preparerFoyers(points);
   } catch (e) {
     res.status(200).json({ ok: false, raison: 'préparation des foyers échouée : ' + e.message });
     return;
@@ -117,7 +94,7 @@ module.exports = async (req, res) => {
     if (Date.now() - depart > BUDGET_MS) { restants = chronologique.length - n; break; }
 
     if (!force) {
-      const deja = await etatFeux.lireEtat(redis, instant, rangMini);
+      const deja = await etatFeux.lireEtat(redis, instant);
       // Un cran n'est sauté que s'il est réellement arrêté. Le dernier reçoit
       // de nouvelles détections en continu ; les récents, le rattrapage du
       // retard de publication de FIRMS. Les sauter figeait un état incomplet
@@ -136,7 +113,7 @@ module.exports = async (req, res) => {
       instant, instants, zones, cellulesTotal, prepare.foyers.length,
       etatFeux.foyersActifs(points, instant), geometrieFrance, prepare, detections
     );
-    await etatFeux.enregistrerEtat(redis, instant, etat, instant === dernier, rangMini);
+    await etatFeux.enregistrerEtat(redis, instant, etat, instant === dernier);
     calcules++;
   }
 
@@ -149,7 +126,6 @@ module.exports = async (req, res) => {
     foyers: prepare.foyers.length,
     detections: points.length,
     mailleFineM: prepare.mailleMinM,
-    octetsDernierCran: octetsSonde,
     detectionsDuCache: detections.duCache,
     frontierePrecise: !!geometrieFrance,
     dureeMs: Date.now() - depart,
