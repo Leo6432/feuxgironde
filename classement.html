@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classement des feux en France par année — surface brûlée depuis 2006</title>
+<meta name="description" content="Surface brûlée en France, année par année, depuis 2006 : le classement complet, 2026 étant la pire année de la série.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0b0f1a">
+<link rel="canonical" href="https://feux-france.vercel.app/classement.html">
+
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Feux en France">
+<meta property="og:locale" content="fr_FR">
+<meta property="og:url" content="https://feux-france.vercel.app/classement.html">
+<meta property="og:title" content="Classement des feux en France par année">
+<meta property="og:description" content="Surface brûlée en France, année par année, depuis 2006.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(215, 25, 28, .16), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 0%, rgba(255, 107, 61, .10), transparent 55%),
+      #0b0f1a;
+    color: #fff;
+    font: 400 16px/1.55 "Source Sans 3", -apple-system, "Segoe UI", Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 22px clamp(20px, 5vw, 56px) 0;
+  }
+  .marque {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font: 700 15px/1 "Archivo", sans-serif;
+    letter-spacing: .01em;
+    color: #fff;
+    text-decoration: none;
+  }
+  .marque svg { width: 22px; height: 22px; flex: 0 0 auto; }
+
+  .nav-retour {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #9aa5b8;
+    text-decoration: none;
+    font: 600 13.5px/1 "Source Sans 3", sans-serif;
+  }
+  .nav-retour:hover { color: #fff; }
+  .nav-retour svg { width: 15px; height: 15px; }
+
+  main {
+    flex: 1;
+    width: 100%;
+    max-width: 1050px;
+    margin: 0 auto;
+    padding: clamp(32px, 6vw, 56px) clamp(20px, 5vw, 56px) 40px;
+  }
+
+  h1 {
+    margin: 0 0 6px;
+    font: 800 clamp(26px, 3.4vw, 38px)/1.15 "Archivo", sans-serif;
+    letter-spacing: -.01em;
+  }
+
+  /* ── Bilan annuel ────────────────────────────────────────────────────
+     Emphase plutôt que huit teintes : une seule série, 2026 en accent et
+     les années passées en retrait. Le libellé direct sur 2026 sert d'encodage
+     secondaire, pour que l'emphase ne repose jamais sur la seule couleur. */
+  .graphique {
+    margin-top: clamp(28px, 4vw, 40px);
+    width: 100%;
+    text-align: left;
+    /* Braise pour les années passées, orange vif pour 2026. Paire validée
+       contre le fond sombre : bande de luminosité, plancher de chroma,
+       séparation daltonisme ΔE 11.8 et vision normale 16.7, contraste ≥ 3:1
+       — tous les contrôles au vert. */
+    --viz-barre: #96502f;
+    --viz-accent: #e8632f;
+    --viz-grille: rgba(255, 255, 255, .07);
+    --viz-axe: rgba(255, 255, 255, .14);
+    --viz-encre-attenuee: #8b95a7;
+  }
+  .graphique .legende-titre {
+    margin: 5px 0 20px;
+    font-size: 13.5px;
+    color: #7d8798;
+  }
+  .graphique svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .viz-grille line { stroke: var(--viz-grille); stroke-width: 1; }
+  .viz-axe { stroke: var(--viz-axe); stroke-width: 1; }
+  .viz-tick { fill: var(--viz-encre-attenuee); font: 400 11px/1 "Source Sans 3", sans-serif; font-variant-numeric: tabular-nums; }
+  .viz-annee { fill: var(--viz-encre-attenuee); font: 400 11.5px/1 "Source Sans 3", sans-serif; }
+  .viz-barre { fill: url(#degradeBarre); transition: opacity .12s; }
+  .viz-barre.est-accent { fill: url(#degradeAccent); }
+  .viz-bande:hover .viz-barre { opacity: .78; }
+  .viz-etiquette { fill: #fff; font: 700 13px/1 "Archivo", sans-serif; }
+  .viz-etiquette-sous { fill: var(--viz-encre-attenuee); font: 400 11px/1 "Source Sans 3", sans-serif; }
+
+  .viz-infobulle {
+    position: fixed;
+    z-index: 20;
+    pointer-events: none;
+    background: #10151f;
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: 8px;
+    padding: 7px 11px;
+    font: 400 12.5px/1.4 "Source Sans 3", sans-serif;
+    white-space: nowrap;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .5);
+  }
+  .viz-infobulle[hidden] { display: none; }
+  .viz-infobulle b { font-weight: 700; }
+
+  .graphique details {
+    margin-top: 18px;
+    font-size: 13px;
+    color: #7d8798;
+  }
+  .graphique summary { cursor: pointer; }
+  .graphique details table { border-collapse: collapse; margin-top: 10px; width: 100%; max-width: 380px; }
+  .graphique details th, .graphique details td {
+    text-align: left;
+    padding: 4px 10px 4px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, .07);
+    font-variant-numeric: tabular-nums;
+  }
+  .graphique details th { color: #9aa5b8; font-weight: 600; }
+  .graphique .source { margin-top: 14px; font-size: 11.5px; color: #5f6879; }
+
+  footer {
+    padding: 22px clamp(20px, 5vw, 56px) 26px;
+    text-align: center;
+    font-size: 12px;
+    color: #5f6879;
+  }
+  footer strong { color: #8b95a7; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="marque" href="/">
+    <!-- Flamme simplifiée : deux courbes imbriquées, pas de détail superflu. -->
+    <svg viewBox="0 0 24 24" fill="none" stroke="#ff6b3d" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 21c4 0 6.5-2.6 6.5-6.2 0-3-1.8-4.9-3-6.7-.3 1.6-1.2 2.7-2 3.3.2-2.6-.6-5.3-3-7.4-.4 2.7-1.6 4.3-3.2 5.9C5.6 11.5 5 13 5 14.8 5 18.4 8 21 12 21Z"/>
+    </svg>
+    Feux en France
+  </a>
+  <a class="nav-retour" href="/emprise.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M19 12H5M11 6l-6 6 6 6"/>
+    </svg>
+    Voir la carte en direct
+  </a>
+</header>
+
+<main>
+  <h1>Classement des feux par année</h1>
+
+  <section class="graphique" id="graphique">
+    <p class="legende-titre">Surface brûlée en France, en hectares, depuis 2006. 2026 est la pire année de la série.</p>
+    <div id="viz"></div>
+    <details>
+      <summary>Voir les chiffres</summary>
+      <div id="viz-table"></div>
+    </details>
+    <p class="source">Chiffres 2025 et 2026 exacts ; les années précédentes sont
+      relevées sur le graphique source et arrondies à la centaine.</p>
+  </section>
+</main>
+
+<div class="viz-infobulle" id="viz-infobulle" hidden></div>
+
+<footer>
+  Détections <strong>NASA FIRMS</strong> (VIIRS, MODIS, Landsat) · fond de carte <strong>Esri</strong> — Maxar, Earthstar Geographics.
+  Site indépendant, aucune consigne de sécurité — en urgence, appelez le <strong>18</strong> ou le <strong>112</strong>.
+</footer>
+
+<script src="/classement.js" defer></script>
+
+</body>
+</html>
