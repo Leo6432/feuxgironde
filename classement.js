@@ -18,35 +18,15 @@
   ];
   var ACCENT_ANNEE = 2026;
 
-  // ── Plus grands brasiers ──────────────────────────────────────────────
-  // Une seule source pour le graphique ET la liste détaillée en dessous
-  // (voir dessinerBrasiers) : pas de texte dupliqué entre le HTML et le JS.
-  // Chiffres rassemblés par recoupement de sources historiques et de presse
-  // (voir la note en bas de section) — 1949 et 2026 mis à part, ce sont des
-  // ordres de grandeur, pas une statistique officielle unique.
-  var BRASIERS = [
-    { annee: 1949, titre: 'Forêt des Landes', lieu: '(Gironde / Landes)', sousTitre: 'Record historique',
-      surface: 52000, texte: 'Le plus grand et le plus meurtrier des incendies modernes en France (82 morts).' },
-    { annee: 2026, titre: 'Forêt des Landes / Saumos', lieu: '(Gironde / Landes) — juillet 2026',
-      surface: 42000, texte: 'Parti de Saumos en Gironde fin juillet 2026, cet incendie s’est propagé à '
-        + 'grande vitesse à travers les forêts de pins denses vers le bassin d’Arcachon et les Landes. '
-        + 'Plus de 220 000 personnes ont été évacuées et les fumées ont atteint l’agglomération bordelaise.' },
-    { annee: 2022, titre: 'Landiras 1', lieu: '(Gironde)',
-      surface: 12500, texte: 'Le plus grand foyer du bel été caniculaire de 2022.' },
-    { annee: 1990, titre: 'Massif des Maures', lieu: '(Var)',
-      surface: 12500, texte: 'Bilan d’un seul foyer majeur lors d’un été où 23 000 ha ont brûlé dans le département.' },
-    { annee: 2022, titre: 'Landiras 2', lieu: '(Gironde)',
-      surface: 7100, texte: 'La reprise massive de l’incendie girondin un mois après le premier épisode.' },
-    { annee: 2021, titre: 'Gonfaron / Massif des Maures', lieu: '(Var)',
-      surface: 7000, texte: 'Parti d’une aire d’autoroute en août 2021.' },
-    { annee: 1976, titre: 'Corbère-les-Cabanes', lieu: '(Pyrénées-Orientales)',
-      surface: 6600, texte: null },
-    { annee: 2022, titre: 'La Teste-de-Buch', lieu: '(Gironde)',
-      surface: 5700, texte: 'Le feu emblématique qui avait ravagé la forêt usagère près de la Dune du Pilat.' },
-    { annee: 2003, titre: 'Vidauban / Massif des Maures', lieu: '(Var)',
-      surface: 5600, texte: null },
-    { annee: 2026, titre: 'Pyrénées-Orientales', lieu: '— juillet 2026',
-      surface: 4900, texte: 'Un autre incendie majeur de l’été 2026, ayant nécessité l’évacuation de 12 000 personnes.' },
+  // ── Surface brûlée en 2026, au fil de la saison ─────────────────────────
+  // Cumul depuis le 1er janvier, à quelques dates relevées au fil de l'été —
+  // pas un suivi quotidien continu, la note sous le graphique le dit.
+  var JOURS_2026 = [
+    { date: '1er juil.', valeur: 28638 },
+    { date: '8 juil.', valeur: 39282 },
+    { date: '15 juil.', valeur: 43710 },
+    { date: '22 juil.', valeur: 86259 },
+    { date: '1er août', valeur: 93490 },
   ];
 
   function fr(n) { return n.toLocaleString('fr-FR'); }
@@ -207,63 +187,42 @@
     }
   }
 
-  function dessinerBrasiers() {
-    var max = 55000;
-    // Le graphique lit le temps de gauche à droite, comme celui du dessus —
-    // le rang (ordre de BRASIERS, du plus grand au plus petit) ne sert qu'à
-    // la liste juste en dessous, pas à l'axe du graphique. Le rang de chaque
-    // événement est calculé avant le tri, pour rester exact une fois l'ordre
-    // chronologique appliqué.
-    var points = BRASIERS
-      .map(function (b, i) { return { b: b, rang: i + 1 }; })
-      .sort(function (p1, p2) { return p1.b.annee - p2.b.annee; })
-      .map(function (p) {
-        var b = p.b, rang = p.rang, accent = b.annee === ACCENT_ANNEE;
-        var detail = '<b>#' + rang + ' — ' + b.annee + '</b><br>' + echapper(b.titre) + ' ' + echapper(b.lieu)
-          + '<br>' + fr(b.surface) + ' ha'
-          + (b.texte ? '<div class="viz-infobulle-texte">' + echapper(b.texte) + '</div>' : '');
-        return {
-          xLabel: String(b.annee),
-          valeur: b.surface,
-          accent: accent,
-          aria: 'Rang ' + rang + ', ' + b.annee + ', ' + b.titre + ' ' + b.lieu + ', ' + fr(b.surface) + ' hectares',
-          infobulle: detail,
-        };
-      });
+  function dessinerJours() {
+    var dernier = JOURS_2026[JOURS_2026.length - 1];
 
-    // Pas d'étiquette directe ici : le record (rang 1) est au premier point,
-    // à gauche, alors que dessinerLigneCliquable ne sait poser une étiquette
-    // que sur le dernier — et le bandeau juste au-dessus le dit déjà.
-    dessinerLigneCliquable('viz-brasiers', points, {
-      max: max,
-      paliers: [0, 10000, 20000, 30000, 40000, 50000],
-      ariaLabelSvg: 'Les dix plus grands incendies recensés en France, en hectares — cliquez un point pour le lieu et le détail',
+    var points = JOURS_2026.map(function (j, i) {
+      var accent = i === JOURS_2026.length - 1;
+      return {
+        xLabel: j.date,
+        valeur: j.valeur,
+        accent: accent,
+        aria: j.date + ' 2026 : ' + fr(j.valeur) + ' hectares cumulés',
+        infobulle: '<b>' + j.date + ' 2026</b> · ' + fr(j.valeur) + ' ha cumulés',
+      };
     });
 
-    var liste = document.getElementById('brasiers-liste');
-    if (liste) {
-      liste.innerHTML = BRASIERS.map(function (b, i) {
-        var rang = i + 1;
-        return '<li class="brasier">'
-          + '<div class="brasier-rang">' + rang + '</div>'
-          + '<div class="brasier-corps">'
-          + '<div class="brasier-entete">'
-          + '<span class="brasier-annee' + (b.annee === ACCENT_ANNEE ? ' est-2026' : '') + '">' + b.annee + '</span>'
-          + '<span>' + echapper(b.titre) + '</span>'
-          + '<span class="brasier-lieu">' + echapper(b.lieu) + '</span>'
-          + '</div>'
-          + (b.sousTitre ? '<div class="brasier-sous">' + echapper(b.sousTitre) + '</div>' : '')
-          + '<div class="brasier-surface">≈ ' + fr(b.surface) + ' hectares</div>'
-          + (b.texte ? '<p class="brasier-texte">' + echapper(b.texte) + '</p>' : '')
-          + '</div></li>';
-      }).join('');
+    dessinerLigneCliquable('viz-jours', points, {
+      max: 100000,
+      paliers: [0, 25000, 50000, 75000, 100000],
+      ariaLabelSvg: 'Surface brûlée cumulée en France en 2026, en hectares, au fil de la saison — cliquez un point pour le détail',
+      etiquette: fr(dernier.valeur) + ' ha',
+      etiquetteSous: 'au ' + dernier.date,
+    });
+
+    var tab = document.getElementById('viz-jours-table');
+    if (tab) {
+      tab.innerHTML = '<table><thead><tr><th>Date</th><th>Hectares cumulés</th></tr></thead><tbody>'
+        + JOURS_2026.slice().reverse().map(function (j) {
+          return '<tr><td>' + j.date + '</td><td>' + fr(j.valeur) + '</td></tr>';
+        }).join('') + '</tbody></table>';
     }
   }
 
+  var dernierJour = JOURS_2026[JOURS_2026.length - 1];
   var derniereAnnee = ANNEES[ANNEES.length - 1];
+  bandeau('bandeau-jour', 'France · au ' + dernierJour.date + ' 2026', fr(dernierJour.valeur) + ' hectares', 'Pire année de la série');
   bandeau('bandeau-annee', 'France · bilan ' + derniereAnnee[0], fr(derniereAnnee[1]) + ' hectares', 'Pire année de la série');
-  bandeau('bandeau-record', 'France · record historique', fr(BRASIERS[0].surface) + ' hectares', BRASIERS[0].titre + ', ' + BRASIERS[0].annee);
 
+  dessinerJours();
   dessinerAnnees();
-  dessinerBrasiers();
 })();
