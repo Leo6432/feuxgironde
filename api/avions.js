@@ -1,5 +1,5 @@
-// Position en direct des avions de la Sécurité civile PRÈS D'UN FEU ACTIF,
-// pour la carte.
+// Position en direct des avions 100 % dédiés à la lutte contre le feu
+// (Canadair, Dash 8 — voir lib/avionsFeu.js), pour la carte.
 //
 // Voir lib/avionsFeu.js pour l'origine des données (airplanes.live) et les
 // réserves sur l'identification des avions — best-effort, non vérifiée en
@@ -8,11 +8,12 @@
 // (reçus/retenus/erreur, indicatifs vus) — c'est le seul moyen de savoir ce
 // que répond réellement airplanes.live sans y avoir accès direct.
 //
-// Appartenir à la flotte ne dit pas ce que l'avion fait à l'instant — un
-// EC145 fait du secours en montagne toute l'année, indépendamment des feux.
-// La réponse est donc filtrée à la proximité d'un foyer actif connu (voir
-// filtrerPresDesFeux dans lib/avionsFeu.js) : hors de tout feu, la liste est
-// vide par construction, ce n'est pas une panne.
+// Pas de filtre de proximité à un feu : un Canadair à 300 km de tout foyer,
+// en transit vers un plan d'eau ou en entraînement, reste un moyen de lutte
+// contre l'incendie — ce n'est pas du tourisme. C'est le TYPE d'appareil qui
+// est filtré (voir PATRONS dans lib/avionsFeu.js), pas sa position du
+// moment : les hélicoptères polyvalents comme l'EC145, qui font aussi du
+// secours en montagne toute l'année, sont exclus à la source.
 //
 // La réponse est mise en cache brièvement et partagée entre tous les
 // visiteurs (une visite ne doit pas coûter un appel à elle seule). Si
@@ -21,7 +22,7 @@
 // volait il y a une minute vole probablement encore.
 
 const { getClient } = require('../lib/redis');
-const { recupererAvions, filtrerPresDesFeux } = require('../lib/avionsFeu');
+const { recupererAvions } = require('../lib/avionsFeu');
 
 const CLE_CACHE = 'avions:etat:v1';
 const CLE_SECOURS = 'avions:secours:v1';
@@ -79,17 +80,8 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // En diagnostic, le filtre feu n'est appliqué qu'à titre indicatif : le but
-  // de ?diag=1 est de déboguer l'identification (les motifs de PATRONS), pas
-  // la proximité — masquer un avion mal identifié à cause d'un feu trop loin
-  // rendrait le diagnostic inutile pour ce qu'il sert.
-  const { avions: avionsPresDunFeu, foyersActifs } = await filtrerPresDesFeux(donnees.avions, redis);
-
   const etat = {
-    ok: true, instant: donnees.instant,
-    avions: diag ? donnees.avions : avionsPresDunFeu,
-    foyersActifs,
-    perime: false,
+    ok: true, instant: donnees.instant, avions: donnees.avions, perime: false,
     parQuadrant: diag ? donnees.parQuadrant : undefined,
   };
 

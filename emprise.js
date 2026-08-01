@@ -222,16 +222,17 @@
       + '2.9.8v-1.5l-2.1-1.5v-4.6l7.4 2.3v-1.8l-7.4-3.8V3.2C13.2 2.5 12.7 2 12 2Z"/></svg>';
 
     var DUREE_SONDAGE_MS = 20000;
-    // ~13 min de sillage à ce rythme : assez pour lire une trajectoire, pas
-    // assez pour alourdir la carte sur un vol de plusieurs heures.
-    var POINTS_TRACE_MAX = 40;
+    // Sillage glissant de 30 minutes : la queue s'efface toute seule à mesure
+    // que la tête s'allonge, plutôt qu'un nombre de points fixe — un avion
+    // lent et un avion rapide gardent ainsi le même horizon temporel.
+    var DUREE_TRACE_MS = 30 * 60000;
 
     var actif = false;
     var couche = null;
     var minuteurAvions = null;
     var marqueurs = {};   // icao24 -> L.Marker
     var traces = {};      // icao24 -> L.Polyline
-    var points = {};      // icao24 -> [[lat, lon], ...]
+    var points = {};      // icao24 -> [[lat, lon, instant], ...], du plus vieux au plus récent
 
     function afficherInfo(texte) {
       if (!texte) { info.hidden = true; return; }
@@ -256,6 +257,7 @@
 
     function poserOuDeplacer(a) {
       var latlon = [a.lat, a.lon];
+      var maintenant = Date.now();
 
       if (!points[a.icao24]) points[a.icao24] = [];
       var suite = points[a.icao24];
@@ -263,17 +265,24 @@
       // Un avion au parking peut rester immobile ; ne pas empiler des points
       // identiques évite un sillage qui n'en est pas un.
       if (!dernier || dernier[0] !== latlon[0] || dernier[1] !== latlon[1]) {
-        suite.push(latlon);
-        if (suite.length > POINTS_TRACE_MAX) suite.shift();
+        suite.push([latlon[0], latlon[1], maintenant]);
       }
+      // La queue du sillage sort d'elle-même de la fenêtre de 30 min à mesure
+      // que la tête avance — c'est ce qui fait "s'enlever au bout".
+      while (suite.length && maintenant - suite[0][2] > DUREE_TRACE_MS) suite.shift();
 
       if (suite.length > 1) {
-        if (traces[a.icao24]) traces[a.icao24].setLatLngs(suite);
+        var latlngs = suite.map(function (p) { return [p[0], p[1]]; });
+        if (traces[a.icao24]) traces[a.icao24].setLatLngs(latlngs);
         else {
-          traces[a.icao24] = L.polyline(suite, {
+          traces[a.icao24] = L.polyline(latlngs, {
             color: '#2fb8e8', weight: 2, opacity: .65, dashArray: '1 6', lineCap: 'round',
           }).addTo(couche);
         }
+      } else if (traces[a.icao24]) {
+        // Il ne reste qu'un point dans la fenêtre : plus rien à relier.
+        couche.removeLayer(traces[a.icao24]);
+        delete traces[a.icao24];
       }
 
       if (marqueurs[a.icao24]) {
@@ -309,11 +318,7 @@
         Object.keys(marqueurs).forEach(function (icao) { if (!vus[icao]) supprimerAvion(icao); });
 
         if (!(d.avions || []).length) {
-          // Deux causes bien différentes du même vide : pas de feu du tout,
-          // ou un feu actif mais aucun avion suivi juste à proximité.
-          afficherInfo(d.foyersActifs
-            ? 'Un feu est actif, mais aucun avion repéré à proximité pour le moment.'
-            : 'Aucun feu actif en ce moment — pas d’avion à suivre.');
+          afficherInfo('Aucun avion de la Sécurité civile repéré pour le moment.');
         } else if (d.perime) {
           afficherInfo('Dernière position connue — airplanes.live ne répond plus depuis quelques instants.');
         } else {
