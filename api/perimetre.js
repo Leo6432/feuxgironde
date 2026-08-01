@@ -41,10 +41,16 @@ module.exports = async (req, res) => {
     }
   } catch (e) { /* on reste sur l'instant le plus récent */ }
 
-  const estDernier = instant === instants[instants.length - 1];
+  const dernier = instants[instants.length - 1];
+  const estDernier = instant === dernier;
+
+  // La maille est commune à toute la barre : sans elle dans la clé, un cran
+  // rendu à 20 m côtoierait un cran rendu à 40 m, et la surface annoncée
+  // sauterait d'un cran à l'autre sans qu'un hectare ait brûlé.
+  const rangConnu = await etatFeux.lireRangMaille(redis);
 
   // Archive d'abord : c'est le chemin normal une fois le précalcul passé.
-  const archive = await etatFeux.lireEtat(redis, instant);
+  const archive = rangConnu === null ? null : await etatFeux.lireEtat(redis, instant, rangConnu);
   if (archive) {
     res.setHeader('X-Cache', 'archive');
     // La liste des crans évolue avec le temps, alors que l'archive est figée :
@@ -94,11 +100,24 @@ module.exports = async (req, res) => {
   }
 
   let etat;
+  let rangRetenu = rangConnu;
   try {
-    // La maille s'élargit d'elle-même si le rendu serait trop lourd à
-    // transporter : mieux vaut des pixels plus gros qu'une réponse qui ne part
-    // pas.
-    const t = etatFeux.etatAuBudget(points, instant);
+    // Maille encore inconnue : on la fixe sur le cran le plus récent, celui
+    // qui porte le plus de contours. La décider sur le cran demandé donnerait
+    // une finesse différente selon l'endroit où l'on se trouve dans la barre.
+    if (rangRetenu === null) {
+      rangRetenu = etatFeux.etatAuBudget(points, dernier, 0).rangMini;
+      await etatFeux.enregistrerRangMaille(redis, rangRetenu);
+    }
+
+    // Le plancher est imposé, mais la maille peut encore s'élargir si ce cran
+    // déborde quand même : mieux vaut des pixels plus gros qu'une réponse trop
+    // lourde pour partir. Le cas échéant, la maille commune suit.
+    const t = etatFeux.etatAuBudget(points, instant, rangRetenu);
+    if (t.rangMini > rangRetenu) {
+      rangRetenu = t.rangMini;
+      await etatFeux.enregistrerRangMaille(redis, rangRetenu);
+    }
     etat = etatFeux.sortie(
       instant, instants, t.zones, t.cellulesTotal, t.prepare.foyers.length,
       etatFeux.foyersActifs(points, instant), geometrieFrance, t.prepare, detections
@@ -108,7 +127,7 @@ module.exports = async (req, res) => {
     return;
   }
 
-  await etatFeux.enregistrerEtat(redis, instant, etat, estDernier);
+  await etatFeux.enregistrerEtat(redis, instant, etat, estDernier, rangRetenu);
 
   res.setHeader('X-Cache', 'calcul');
   res.status(200).json(etat);

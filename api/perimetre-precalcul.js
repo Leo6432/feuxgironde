@@ -77,11 +77,16 @@ module.exports = async (req, res) => {
   // décision prise sur le cran le plus lourd plutôt que sur le premier venu ;
   // la passe chronologique, elle, ne marque toujours qu'une fois.
   let rangMini = 0;
-  let sommetsSonde = 0;
+  let octetsSonde = 0;
   try {
-    const sonde = etatFeux.etatAuBudget(points, dernier);
-    rangMini = sonde.rangMini;
-    sommetsSonde = sonde.sommets;
+    // La maille ne peut que s'élargir tant que la clé vit : la saison ajoute du
+    // terrain brûlé, elle n'en retire pas. La laisser osciller d'un jour à
+    // l'autre invaliderait toute l'archive à chaque bascule.
+    const connu = await etatFeux.lireRangMaille(redis);
+    const sonde = etatFeux.etatAuBudget(points, dernier, connu || 0);
+    rangMini = Math.max(sonde.rangMini, connu || 0);
+    octetsSonde = sonde.octets;
+    await etatFeux.enregistrerRangMaille(redis, rangMini);
   } catch (e) {
     res.status(200).json({ ok: false, raison: 'sondage de la maille échoué : ' + e.message });
     return;
@@ -112,10 +117,16 @@ module.exports = async (req, res) => {
     if (Date.now() - depart > BUDGET_MS) { restants = chronologique.length - n; break; }
 
     if (!force) {
-      const deja = await etatFeux.lireEtat(redis, instant);
-      // Le dernier cran est toujours recalculé : de nouvelles détections
-      // arrivent en continu, son état d'hier ne vaut plus rien.
-      if (deja && instant !== dernier) { sautes++; continue; }
+      const deja = await etatFeux.lireEtat(redis, instant, rangMini);
+      // Un cran n'est sauté que s'il est réellement arrêté. Le dernier reçoit
+      // de nouvelles détections en continu ; les récents, le rattrapage du
+      // retard de publication de FIRMS. Les sauter figeait un état incomplet
+      // pour trente jours — c'est ce qui creusait des marches dans la
+      // progression.
+      if (deja && instant !== dernier && etatFeux.estFige(instant, maintenant)) {
+        sautes++;
+        continue;
+      }
     }
 
     const { zones, cellulesTotal } = etatFeux.zonesDepuisFoyers(
@@ -125,7 +136,7 @@ module.exports = async (req, res) => {
       instant, instants, zones, cellulesTotal, prepare.foyers.length,
       etatFeux.foyersActifs(points, instant), geometrieFrance, prepare, detections
     );
-    await etatFeux.enregistrerEtat(redis, instant, etat, instant === dernier);
+    await etatFeux.enregistrerEtat(redis, instant, etat, instant === dernier, rangMini);
     calcules++;
   }
 
@@ -138,7 +149,7 @@ module.exports = async (req, res) => {
     foyers: prepare.foyers.length,
     detections: points.length,
     mailleFineM: prepare.mailleMinM,
-    sommetsDernierCran: sommetsSonde,
+    octetsDernierCran: octetsSonde,
     detectionsDuCache: detections.duCache,
     frontierePrecise: !!geometrieFrance,
     dureeMs: Date.now() - depart,
