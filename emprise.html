@@ -60,10 +60,22 @@
   .rail-item svg { width: 24px; height: 24px; display: block; }
   .rail-item:hover { color: #cfd6e2; background: rgba(255, 255, 255, .04); }
   .rail-item.is-actif { color: #fff; background: rgba(255, 255, 255, .07); border-left-color: #d7191c; }
+  .rail-item { position: relative; }
 
-  /* Avions : bouton-interrupteur, pas une vue exclusive — il reste actif que
-     l'on soit sur Carte ou sur Satellite, comme un calque qu'on superpose. */
-  .rail-item.est-calque.is-actif { border-left-color: #2fb8e8; }
+  /* Compteur d'avions vus dans les dernières 24 h : visible sans avoir à
+     ouvrir le panneau, puisque les avions eux-mêmes sont toujours affichés
+     sur la carte, panneau ouvert ou non. */
+  .rail-badge {
+    position: absolute;
+    top: 6px; right: 10px;
+    min-width: 16px; height: 16px; padding: 0 3px;
+    border-radius: 999px;
+    background: #2fb8e8;
+    color: #071019;
+    font: 700 10px/16px -apple-system, "Segoe UI", Arial, sans-serif;
+    text-align: center;
+  }
+  .rail-badge[hidden] { display: none; }
 
   /* ── Panneau, adossé à la colonne ───────────────────────────────────── */
   .panneau {
@@ -162,6 +174,23 @@
   .avion-etiquette .indicatif { color: #2fb8e8; }
   .avion-etiquette .detail { color: #9aa5b8; font-weight: 400; margin-top: 2px; }
 
+  #panneau-avions .compte {
+    font: 700 24px/1.2 "Archivo", -apple-system, "Segoe UI", Arial, sans-serif;
+    color: #2fb8e8;
+    margin: 10px 0 3px;
+  }
+  #avions-liste { list-style: none; margin: 10px 0 0; padding: 0; }
+  #avions-liste li {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, .09);
+    font-variant-numeric: tabular-nums;
+  }
+  #avions-liste .indicatif { font-weight: 600; }
+  #avions-liste .quand { color: #9aa5b8; font-size: 12px; flex: 0 0 auto; }
+
   /* Message discret quand le calque est actif mais qu'OpenSky ne renvoie
      aucun avion identifié — ni erreur, ni silence qui laisserait croire à un
      bug. */
@@ -232,13 +261,15 @@
     <span>Satellite</span>
   </button>
 
-  <button type="button" class="rail-item est-calque" id="onglet-avions" aria-pressed="false">
+  <button type="button" class="rail-item" id="onglet-avions" aria-pressed="false"
+          aria-controls="panneau-avions">
     <!-- Avion vu de dessus : fuselage, ailes, empennage. Simplifié pour
          rester lisible à 24 px, comme les autres icônes de la colonne. -->
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <path d="M12 2c-.7 0-1.2.5-1.2 1.2v5.4L3.4 12.4v1.8l7.4-2.3v4.6l-2.1 1.5v1.5l2.9-.8.6-.1.6.1 2.9.8v-1.5l-2.1-1.5v-4.6l7.4 2.3v-1.8l-7.4-3.8V3.2C13.2 2.5 12.7 2 12 2Z"/>
     </svg>
     <span>Avions</span>
+    <span class="rail-badge" id="avions-badge" hidden>0</span>
   </button>
 </nav>
 
@@ -262,6 +293,17 @@
   <p class="note">Heures françaises. Horaires réels déduits des détections des
     derniers jours (VIIRS SNPP/NOAA-20/NOAA-21, MODIS Terra/Aqua, Landsat) —
     une habitude observée, pas une prévision d’orbite.</p>
+</div>
+
+<div class="panneau" id="panneau-avions" role="region" aria-label="Avions de la Sécurité civile" hidden>
+  <h2>Avions vus dans les dernières 24 h</h2>
+  <div class="compte" id="avions-compte">—</div>
+  <ul id="avions-liste"></ul>
+  <p class="note" id="avions-note">Position en direct affichée sur la carte en
+    permanence, panneau ouvert ou non — source airplanes.live (ADS-B
+    communautaire, affichage non exhaustif). Un avion listé ici n'est pas
+    forcément en train de combattre un feu : son appartenance à la flotte de
+    la Sécurité civile est confirmée, pas sa mission du moment.</p>
 </div>
 
 <div class="barre-temps" id="barre" hidden>

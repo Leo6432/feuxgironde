@@ -66,6 +66,37 @@
     return partie(ms, opts, 'hour').padStart(2, '0') + 'h' + partie(ms, opts, 'minute').padStart(2, '0');
   }
 
+  // ── Vues exclusives de la colonne ────────────────────────────────────
+  // Carte, Satellite et Avions partagent un même principe : au plus un
+  // panneau ouvert à la fois, puisqu'il recouvre une partie de la carte.
+  // « Carte » est l'état neutre — sans panneau. Ce que chaque bouton
+  // COMMANDE en dessous (la couche satellite n'existe pas, la couche avions
+  // reste affichée même panneau fermé) leur est propre ; seule l'exclusivité
+  // visuelle des panneaux est mise en commun ici.
+  var VUES = {};
+  function enregistrerVue(nom, onglet, panneau) { VUES[nom] = { onglet: onglet, panneau: panneau }; }
+  function choisirVue(nom) {
+    var unPanneauOuvert = false;
+    Object.keys(VUES).forEach(function (cle) {
+      var v = VUES[cle];
+      var actif = cle === nom;
+      if (v.panneau) v.panneau.hidden = !actif;
+      if (v.onglet) {
+        v.onglet.classList.toggle('is-actif', actif);
+        v.onglet.setAttribute('aria-pressed', actif ? 'true' : 'false');
+      }
+      if (actif && v.panneau) unPanneauOuvert = true;
+    });
+    document.body.classList.toggle('panneau-ouvert', unPanneauOuvert);
+    // La zone visible de la carte change quand un panneau s'ouvre ou se
+    // ferme : sans cela, Leaflet garde l'ancienne taille et laisse une
+    // bande grise.
+    if (window.carteEmprise) window.carteEmprise.invalidateSize();
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') choisirVue('carte');
+  });
+
   // ── Passages satellite ────────────────────────────────────────────────
   // L'heure du prochain passage est figée côté serveur (prochainPassageFige
   // dans /api/firms) : elle ne doit pas bouger tant que ce passage n'a pas eu
@@ -117,27 +148,13 @@
     var panneau = document.getElementById('panneau-satellite');
     if (!ongletCarte || !ongletSat || !panneau) return;
 
-    // « Carte » et « Satellite » sont deux vues exclusives : le panneau
-    // recouvrant une partie de la carte, laisser les deux actifs en même temps
-    // n'aurait pas de sens.
-    function choisir(vueSatellite) {
-      panneau.hidden = !vueSatellite;
-      document.body.classList.toggle('panneau-ouvert', vueSatellite);
-      ongletSat.classList.toggle('is-actif', vueSatellite);
-      ongletCarte.classList.toggle('is-actif', !vueSatellite);
-      ongletSat.setAttribute('aria-pressed', vueSatellite ? 'true' : 'false');
-      ongletCarte.setAttribute('aria-pressed', vueSatellite ? 'false' : 'true');
-      // La zone visible de la carte change quand le panneau s'ouvre ou se
-      // ferme : sans cela, Leaflet garde l'ancienne taille et laisse une
-      // bande grise.
-      if (window.carteEmprise) window.carteEmprise.invalidateSize();
-    }
+    enregistrerVue('carte', ongletCarte, null);
+    enregistrerVue('satellite', ongletSat, panneau);
 
-    ongletSat.addEventListener('click', function () { choisir(panneau.hidden); });
-    ongletCarte.addEventListener('click', function () { choisir(false); });
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') choisir(false);
+    ongletSat.addEventListener('click', function () {
+      choisirVue(panneau.hidden ? 'satellite' : 'carte');
     });
+    ongletCarte.addEventListener('click', function () { choisirVue('carte'); });
 
     // Chargé une fois au démarrage : ces horaires ne dépendent pas du curseur
     // temporel, ils décrivent le rythme des satellites aujourd'hui.
@@ -209,13 +226,26 @@
   }
 
   // ── Avions de la Sécurité civile ─────────────────────────────────────
-  // Un calque superposable, indépendant du choix Carte/Satellite : on peut le
-  // laisser actif en consultant le panneau satellite. Positions et
-  // identification best-effort via OpenSky Network, voir lib/avionsFeu.js.
+  // Toujours affichés sur la carte, dès le chargement de la page — pas un
+  // calque qu'il faut activer : un avion près d'un feu est une information
+  // aussi immédiate que le feu lui-même. Le bouton de la colonne n'ouvre
+  // qu'un panneau de détail (le compte des dernières 24 h et les noms), sur
+  // le même principe que Satellite ; il ne commande jamais si les avions
+  // sont dessinés. Positions et identification best-effort via
+  // airplanes.live, voir lib/avionsFeu.js.
   (function avionsFeu() {
     var bouton = document.getElementById('onglet-avions');
+    var panneau = document.getElementById('panneau-avions');
     var info = document.getElementById('avions-info');
-    if (!bouton) return;
+    var badge = document.getElementById('avions-badge');
+    var compte = document.getElementById('avions-compte');
+    var liste = document.getElementById('avions-liste');
+    if (!bouton || !panneau) return;
+
+    enregistrerVue('avions', bouton, panneau);
+    bouton.addEventListener('click', function () {
+      choisirVue(panneau.hidden ? 'avions' : 'carte');
+    });
 
     var ICONE_AVION = '<svg viewBox="0 0 24 24" fill="#eaf2fb" aria-hidden="true">'
       + '<path d="M12 2c-.7 0-1.2.5-1.2 1.2v5.4L3.4 12.4v1.8l7.4-2.3v4.6l-2.1 1.5v1.5l2.9-.8.6-.1.6.1 '
@@ -226,10 +256,9 @@
     // que la tête s'allonge, plutôt qu'un nombre de points fixe — un avion
     // lent et un avion rapide gardent ainsi le même horizon temporel.
     var DUREE_TRACE_MS = 30 * 60000;
+    var MINUTE = 60000, HEURE = 3600000;
 
-    var actif = false;
-    var couche = null;
-    var minuteurAvions = null;
+    var couche = L.layerGroup().addTo(carte);
     var marqueurs = {};   // icao24 -> L.Marker
     var traces = {};      // icao24 -> L.Polyline
     var points = {};      // icao24 -> [[lat, lon, instant], ...], du plus vieux au plus récent
@@ -304,10 +333,37 @@
       });
     }
 
+    // « il y a 3 min », « il y a 2 h » — assez de précision pour situer un
+    // passage sans afficher une heure qu'il faudrait comparer soi-même.
+    function depuis(ts) {
+      var ecart = Date.now() - ts;
+      if (ecart < MINUTE) return 'à l’instant';
+      if (ecart < HEURE) return 'il y a ' + Math.round(ecart / MINUTE) + ' min';
+      return 'il y a ' + Math.round(ecart / HEURE) + ' h';
+    }
+
+    function afficherHistorique(historique) {
+      var n = (historique || []).length;
+      if (badge) {
+        badge.textContent = String(n);
+        badge.hidden = n === 0;
+      }
+      if (compte) {
+        compte.textContent = n
+          ? n + (n > 1 ? ' avions vus' : ' avion vu')
+          : 'aucun avion vu depuis 24 h';
+      }
+      if (liste) {
+        liste.innerHTML = (historique || []).map(function (a) {
+          return '<li><span class="indicatif">' + a.indicatif + '</span>'
+            + '<span class="quand">' + depuis(a.derniereVue) + '</span></li>';
+        }).join('');
+      }
+    }
+
     function charger() {
-      if (!actif) return;
       fetch('/api/avions').then(function (r) { return r.json(); }).then(function (d) {
-        if (!actif || !d) return;
+        if (!d) return;
         if (!d.ok) {
           afficherInfo('Suivi des avions indisponible' + (d.raison ? ' (' + d.raison + ')' : '') + '.');
           return;
@@ -316,6 +372,7 @@
         var vus = {};
         (d.avions || []).forEach(function (a) { vus[a.icao24] = true; poserOuDeplacer(a); });
         Object.keys(marqueurs).forEach(function (icao) { if (!vus[icao]) supprimerAvion(icao); });
+        afficherHistorique(d.historique24h);
 
         if (!(d.avions || []).length) {
           afficherInfo('Aucun avion de la Sécurité civile repéré pour le moment.');
@@ -324,25 +381,11 @@
         } else {
           afficherInfo(null);
         }
-      }).catch(function () { if (actif) afficherInfo('Suivi des avions indisponible.'); });
+      }).catch(function () { afficherInfo('Suivi des avions indisponible.'); });
     }
 
-    bouton.addEventListener('click', function () {
-      actif = !actif;
-      bouton.classList.toggle('is-actif', actif);
-      bouton.setAttribute('aria-pressed', actif ? 'true' : 'false');
-
-      if (actif) {
-        if (!couche) couche = L.layerGroup();
-        couche.addTo(carte);
-        charger();
-        minuteurAvions = setInterval(charger, DUREE_SONDAGE_MS);
-      } else {
-        if (minuteurAvions) { clearInterval(minuteurAvions); minuteurAvions = null; }
-        if (couche) carte.removeLayer(couche);
-        afficherInfo(null);
-      }
-    });
+    charger();
+    setInterval(charger, DUREE_SONDAGE_MS);
   })();
 
   function arreter() {

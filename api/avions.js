@@ -22,9 +22,14 @@
 // airplanes.live ne répond pas, la dernière position connue est resservie
 // avec `perime: true` plutôt que de laisser la carte vide — un avion qui
 // volait il y a une minute vole probablement encore.
+//
+// La réponse porte aussi `historique24h` : les avions distincts vus dans les
+// dernières 24 h, du plus récent au plus ancien (voir vus24h dans
+// lib/avionsFeu.js). Ça alimente le badge et la liste du panneau côté carte,
+// qui restent significatifs même quand aucun avion n'est visible à l'instant.
 
 const { getClient } = require('../lib/redis');
-const { recupererAvions } = require('../lib/avionsFeu');
+const { recupererAvions, enregistrerVus, vus24h } = require('../lib/avionsFeu');
 
 const CLE_CACHE = 'avions:etat:v1';
 const CLE_SECOURS = 'avions:secours:v1';
@@ -82,8 +87,16 @@ module.exports = async (req, res) => {
     return;
   }
 
+  // L'enregistrement n'a de sens qu'après une moisson fraîche : c'est le seul
+  // moment où l'on sait vraiment que ces avions volaient à cet instant. Une
+  // réponse servie depuis le cache ne repasse jamais ici, ce qui évite
+  // d'écrire vingt fois la même observation pour une seule moisson réelle.
+  await enregistrerVus(redis, donnees.avions, donnees.instant);
+  const historique24h = await vus24h(redis, donnees.instant);
+
   const etat = {
     ok: true, instant: donnees.instant, avions: donnees.avions, perime: false,
+    historique24h,
     parQuadrant: diag ? donnees.parQuadrant : undefined,
   };
 
