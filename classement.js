@@ -209,19 +209,27 @@
 
   function dessinerBrasiers() {
     var max = 55000;
-    var points = BRASIERS.map(function (b, i) {
-      var rang = i + 1, accent = b.annee === ACCENT_ANNEE;
-      var detail = '<b>#' + rang + ' — ' + b.annee + '</b><br>' + echapper(b.titre) + ' ' + echapper(b.lieu)
-        + '<br>' + fr(b.surface) + ' ha'
-        + (b.texte ? '<div class="viz-infobulle-texte">' + echapper(b.texte) + '</div>' : '');
-      return {
-        xLabel: String(b.annee),
-        valeur: b.surface,
-        accent: accent,
-        aria: 'Rang ' + rang + ', ' + b.annee + ', ' + b.titre + ' ' + b.lieu + ', ' + fr(b.surface) + ' hectares',
-        infobulle: detail,
-      };
-    });
+    // Le graphique lit le temps de gauche à droite, comme celui du dessus —
+    // le rang (ordre de BRASIERS, du plus grand au plus petit) ne sert qu'à
+    // la liste juste en dessous, pas à l'axe du graphique. Le rang de chaque
+    // événement est calculé avant le tri, pour rester exact une fois l'ordre
+    // chronologique appliqué.
+    var points = BRASIERS
+      .map(function (b, i) { return { b: b, rang: i + 1 }; })
+      .sort(function (p1, p2) { return p1.b.annee - p2.b.annee; })
+      .map(function (p) {
+        var b = p.b, rang = p.rang, accent = b.annee === ACCENT_ANNEE;
+        var detail = '<b>#' + rang + ' — ' + b.annee + '</b><br>' + echapper(b.titre) + ' ' + echapper(b.lieu)
+          + '<br>' + fr(b.surface) + ' ha'
+          + (b.texte ? '<div class="viz-infobulle-texte">' + echapper(b.texte) + '</div>' : '');
+        return {
+          xLabel: String(b.annee),
+          valeur: b.surface,
+          accent: accent,
+          aria: 'Rang ' + rang + ', ' + b.annee + ', ' + b.titre + ' ' + b.lieu + ', ' + fr(b.surface) + ' hectares',
+          infobulle: detail,
+        };
+      });
 
     // Pas d'étiquette directe ici : le record (rang 1) est au premier point,
     // à gauche, alors que dessinerLigneCliquable ne sait poser une étiquette
