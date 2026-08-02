@@ -303,6 +303,29 @@
     var traces = {};      // icao24 -> L.Polyline
     var points = {};      // icao24 -> [[lat, lon, instant], ...], du plus vieux au plus récent
 
+    // Un rechargement de page vidait `points` : le sillage repartait de zéro
+    // alors qu'il tenait toujours dans sa fenêtre de 30 min. Sauvegardé côté
+    // navigateur (pas besoin du serveur, ça ne concerne que cet onglet) et
+    // relu au démarrage, purgé de tout ce qui a déjà dépassé la fenêtre.
+    var CLE_TRACES = 'feux:avions:traces:v1';
+
+    function chargerTracesSauvegardees() {
+      try {
+        var sauvegarde = JSON.parse(localStorage.getItem(CLE_TRACES) || '{}');
+        var maintenant = Date.now();
+        Object.keys(sauvegarde).forEach(function (icao) {
+          var suite = (sauvegarde[icao] || []).filter(function (p) {
+            return maintenant - p[2] <= DUREE_TRACE_MS;
+          });
+          if (suite.length) points[icao] = suite;
+        });
+      } catch (e) { /* stockage indisponible (navigation privée, quota...) : on repart de zéro */ }
+    }
+
+    function sauvegarderTraces() {
+      try { localStorage.setItem(CLE_TRACES, JSON.stringify(points)); } catch (e) { /* tant pis */ }
+    }
+
     function afficherInfo(texte) {
       if (!texte) { info.hidden = true; return; }
       info.textContent = texte;
@@ -313,8 +336,15 @@
       var morceaux = [];
       if (a.altitudeM != null) morceaux.push(a.altitudeM.toLocaleString('fr-FR') + ' m');
       if (a.vitesseKmh != null) morceaux.push(a.vitesseKmh + ' km/h');
+      // Dernière position et heure : le point qu'on vient de poser dans le
+      // sillage (voir poserOuDeplacer, appelé juste avant celui-ci).
+      var suite = points[a.icao24];
+      var dernier = suite && suite.length ? suite[suite.length - 1] : null;
+      var position = dernier ? dernier[0].toFixed(3) + ', ' + dernier[1].toFixed(3) : null;
+      var quand = dernier ? depuis(dernier[2]) : null;
       return '<div class="avion-etiquette"><span class="indicatif">' + a.indicatif + '</span>'
         + (morceaux.length ? '<div class="detail">' + morceaux.join(' · ') + '</div>' : '')
+        + (position ? '<div class="detail">' + position + (quand ? ' · ' + quand : '') + '</div>' : '')
         + '</div>';
     }
 
@@ -345,7 +375,7 @@
         if (traces[a.icao24]) traces[a.icao24].setLatLngs(latlngs);
         else {
           traces[a.icao24] = L.polyline(latlngs, {
-            color: '#2fb8e8', weight: 2, opacity: .65, dashArray: '1 6', lineCap: 'round',
+            color: '#2fb8e8', weight: 3, opacity: .75, lineCap: 'round', lineJoin: 'round',
           }).addTo(couche);
         }
       } else if (traces[a.icao24]) {
@@ -360,7 +390,7 @@
         marqueurs[a.icao24].setTooltipContent(etiquette(a));
       } else {
         marqueurs[a.icao24] = L.marker(latlon, { icon: icone(a) })
-          .bindTooltip(etiquette(a), { direction: 'top', offset: [0, -12], opacity: .96 })
+          .bindTooltip(etiquette(a), { direction: 'top', offset: [0, -12], opacity: .96, permanent: true })
           .addTo(couche);
       }
     }
@@ -424,6 +454,7 @@
           couche.removeLayer(marqueurs[icao]);
           delete marqueurs[icao];
         });
+        sauvegarderTraces();
         afficherHistorique(d.historique24h);
 
         if (!(d.avions || []).length) {
@@ -436,6 +467,7 @@
       }).catch(function () { afficherInfo('Suivi des avions indisponible.'); });
     }
 
+    chargerTracesSauvegardees();
     charger();
     setInterval(charger, DUREE_SONDAGE_MS);
   })();
