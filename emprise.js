@@ -411,7 +411,19 @@
 
         var vus = {};
         (d.avions || []).forEach(function (a) { vus[a.icao24] = true; poserOuDeplacer(a); });
-        Object.keys(marqueurs).forEach(function (icao) { if (!vus[icao]) supprimerAvion(icao); });
+        Object.keys(marqueurs).forEach(function (icao) {
+          if (vus[icao]) return;
+          // Un trou ponctuel de réception ADS-B (courant à basse altitude, en
+          // virage près d'un feu) ne doit pas effacer 30 minutes de sillage :
+          // seul le marqueur disparaît tant que l'avion n'a pas été absent
+          // plus longtemps que la fenêtre de trace elle-même — le sillage
+          // reprend là où il en était s'il revient dans cette fenêtre.
+          var suite = points[icao];
+          var dernierVu = suite && suite.length ? suite[suite.length - 1][2] : 0;
+          if (Date.now() - dernierVu > DUREE_TRACE_MS) { supprimerAvion(icao); return; }
+          couche.removeLayer(marqueurs[icao]);
+          delete marqueurs[icao];
+        });
         afficherHistorique(d.historique24h);
 
         if (!(d.avions || []).length) {
