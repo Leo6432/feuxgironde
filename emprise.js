@@ -302,6 +302,10 @@
     var marqueurs = {};   // icao24 -> L.Marker
     var traces = {};      // icao24 -> L.Polyline
     var points = {};      // icao24 -> [[lat, lon, instant], ...], du plus vieux au plus récent
+    // Distinct de `points` : l'instant du dernier sondage où l'avion figurait
+    // dans la réponse, qu'il ait bougé ou non — la fraîcheur du signal ADS-B
+    // lui-même, pas celle du dernier vrai déplacement (voir etiquette).
+    var dernierSignal = {};
 
     // Un rechargement de page vidait `points` : le sillage repartait de zéro
     // alors qu'il tenait toujours dans sa fenêtre de 30 min. Sauvegardé côté
@@ -344,9 +348,14 @@
       var suite = points[a.icao24];
       var dernier = suite && suite.length ? suite[suite.length - 1] : null;
       var quand = dernier ? depuis(dernier[2]) : null;
+      // Fraîcheur du signal lui-même — au-delà, pas assez d'écart pour que
+      // les paliers minute/heure de depuis() disent grand-chose : la
+      // seconde est la seule unité qui a du sens à ce rythme de sondage.
+      var signal = dernierSignal[a.icao24] ? depuisPrecis(dernierSignal[a.icao24]) : null;
       return '<div class="avion-etiquette"><span class="indicatif">' + a.indicatif + '</span>'
         + (morceaux.length ? '<div class="detail">' + morceaux.join(' · ') + '</div>' : '')
-        + (quand ? '<div class="detail">' + quand + '</div>' : '')
+        + (quand ? '<div class="detail">activité : ' + quand + '</div>' : '')
+        + (signal ? '<div class="detail">signal ADS-B : ' + signal + '</div>' : '')
         + '</div>';
     }
 
@@ -366,11 +375,13 @@
       if (marqueurs[icao]) { couche.removeLayer(marqueurs[icao]); delete marqueurs[icao]; }
       if (traces[icao]) { couche.removeLayer(traces[icao]); delete traces[icao]; }
       delete points[icao];
+      delete dernierSignal[icao];
     }
 
     function poserOuDeplacer(a) {
       var latlon = [a.lat, a.lon];
       var maintenant = Date.now();
+      dernierSignal[a.icao24] = maintenant;
 
       if (!points[a.icao24]) points[a.icao24] = [];
       var suite = points[a.icao24];
@@ -427,6 +438,17 @@
     function depuis(ts) {
       var ecart = Date.now() - ts;
       if (ecart < MINUTE) return 'à l’instant';
+      if (ecart < HEURE) return 'il y a ' + Math.round(ecart / MINUTE) + ' min';
+      return 'il y a ' + Math.round(ecart / HEURE) + ' h';
+    }
+
+    // Variante à la seconde, pour un rythme de sondage de l'ordre de 20 s :
+    // à cette échelle, « à l'instant » pour tout ce qui a moins d'une minute
+    // ne distinguerait pas un signal de 3 s d'un signal de 55 s.
+    function depuisPrecis(ts) {
+      var ecart = Date.now() - ts;
+      if (ecart < 1000) return 'à l’instant';
+      if (ecart < MINUTE) return 'il y a ' + Math.round(ecart / 1000) + ' s';
       if (ecart < HEURE) return 'il y a ' + Math.round(ecart / MINUTE) + ' min';
       return 'il y a ' + Math.round(ecart / HEURE) + ' h';
     }
