@@ -173,6 +173,13 @@
   }
   .avion-etiquette .indicatif { color: #2fb8e8; }
   .avion-etiquette .detail { color: #9aa5b8; font-weight: 400; margin-top: 2px; }
+  /* Leaflet habille toute étiquette d'un fond blanc et d'une petite flèche
+     par défaut ; .avion-etiquette porte déjà son propre fond sombre, donc ce
+     chrome par défaut ne faisait que laisser un liseré blanc autour. */
+  .leaflet-tooltip.avion-tooltip {
+    background: transparent; border: none; box-shadow: none; padding: 0;
+  }
+  .leaflet-tooltip.avion-tooltip::before { display: none; }
 
   #panneau-avions .compte {
     font: 700 24px/1.2 "Archivo", -apple-system, "Segoe UI", Arial, sans-serif;

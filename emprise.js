@@ -336,16 +336,30 @@
       var morceaux = [];
       if (a.altitudeM != null) morceaux.push(a.altitudeM.toLocaleString('fr-FR') + ' m');
       if (a.vitesseKmh != null) morceaux.push(a.vitesseKmh + ' km/h');
-      // Dernière position et heure : le point qu'on vient de poser dans le
-      // sillage (voir poserOuDeplacer, appelé juste avant celui-ci).
+      // Heure de la dernière activité réelle : le point le plus récent du
+      // sillage (voir poserOuDeplacer, appelé juste avant celui-ci), qui
+      // n'avance plus tant que l'avion ne fait que trembler sur place. Pas de
+      // coordonnées brutes affichées : un couple de chiffres sans repère
+      // (ville, distance...) n'est lisible pour personne.
       var suite = points[a.icao24];
       var dernier = suite && suite.length ? suite[suite.length - 1] : null;
-      var position = dernier ? dernier[0].toFixed(3) + ', ' + dernier[1].toFixed(3) : null;
       var quand = dernier ? depuis(dernier[2]) : null;
       return '<div class="avion-etiquette"><span class="indicatif">' + a.indicatif + '</span>'
         + (morceaux.length ? '<div class="detail">' + morceaux.join(' · ') + '</div>' : '')
-        + (position ? '<div class="detail">' + position + (quand ? ' · ' + quand : '') + '</div>' : '')
+        + (quand ? '<div class="detail">' + quand + '</div>' : '')
         + '</div>';
+    }
+
+    // En dessous, c'est le bruit de mesure ADS-B — un avion posé ou en vol
+    // stationnaire n'est jamais rapporté deux fois à la même position exacte
+    // — pas un vrai déplacement. Sans ce seuil, ce bruit repoussait sans
+    // cesse l'horodatage du sillage à « à l'instant », même immobile depuis
+    // plusieurs minutes.
+    var SEUIL_DEPLACEMENT_M = 50;
+    function distanceM(lat1, lon1, lat2, lon2) {
+      var dLat = (lat2 - lat1) * 111320;
+      var dLon = (lon2 - lon1) * 111320 * Math.cos(lat1 * Math.PI / 180);
+      return Math.sqrt(dLat * dLat + dLon * dLon);
     }
 
     function supprimerAvion(icao) {
@@ -361,9 +375,11 @@
       if (!points[a.icao24]) points[a.icao24] = [];
       var suite = points[a.icao24];
       var dernier = suite[suite.length - 1];
-      // Un avion au parking peut rester immobile ; ne pas empiler des points
-      // identiques évite un sillage qui n'en est pas un.
-      if (!dernier || dernier[0] !== latlon[0] || dernier[1] !== latlon[1]) {
+      // Un avion au parking (ou en vol stationnaire) peut rester immobile ;
+      // ne pas empiler de point sous le seuil de bruit évite un sillage qui
+      // n'en est pas un, et garde l'horodatage fidèle au dernier vrai
+      // déplacement plutôt qu'au dernier sondage reçu.
+      if (!dernier || distanceM(dernier[0], dernier[1], latlon[0], latlon[1]) > SEUIL_DEPLACEMENT_M) {
         suite.push([latlon[0], latlon[1], maintenant]);
       }
       // La queue du sillage sort d'elle-même de la fenêtre de 30 min à mesure
@@ -390,7 +406,10 @@
         marqueurs[a.icao24].setTooltipContent(etiquette(a));
       } else {
         marqueurs[a.icao24] = L.marker(latlon, { icon: icone(a) })
-          .bindTooltip(etiquette(a), { direction: 'top', offset: [0, -12], opacity: .96, permanent: true })
+          .bindTooltip(etiquette(a), {
+            direction: 'top', offset: [0, -12], opacity: .96, permanent: true,
+            className: 'avion-tooltip',
+          })
           .addTo(couche);
       }
     }
