@@ -50,7 +50,16 @@ module.exports = async (req, res) => {
   // au pire 30 s de retard cumulé (10 + 20), toujours sous le rythme de la
   // source, plutôt que les 75 s (15 + 60) d'avant qui pouvaient à eux seuls
   // couvrir plus d'un sondage client sans rien de neuf à afficher.
-  res.setHeader('Cache-Control', diag ? 'no-store' : 's-maxage=10, stale-while-revalidate=20');
+  //
+  // `max-age=0` en plus : `s-maxage` seul ne s'adresse qu'aux caches
+  // partagés (CDN) et le navigateur, lui, pouvait réutiliser sa PROPRE copie
+  // sans jamais revalider — un sondage client toutes les 20 s ne servait
+  // alors à rien si le navigateur répondait depuis son cache local. Ce
+  // n'est pas confirmé en direct (outils de déploiement indisponibles au
+  // moment d'écrire ceci), mais c'est correct dans tous les cas : ce
+  // réglage ne peut pas aggraver la fraîcheur, seulement l'améliorer.
+  res.setHeader('Cache-Control',
+    diag ? 'no-store' : 's-maxage=10, max-age=0, stale-while-revalidate=20');
 
   let redis = null;
   try {
