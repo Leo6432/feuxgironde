@@ -348,21 +348,16 @@
       var morceaux = [];
       if (a.altitudeM != null) morceaux.push(a.altitudeM.toLocaleString('fr-FR') + ' m');
       if (a.vitesseKmh != null) morceaux.push(a.vitesseKmh + ' km/h');
-      // Heure de la dernière activité réelle : le point le plus récent du
-      // sillage (voir poserOuDeplacer, appelé juste avant celui-ci), qui
-      // n'avance plus tant que l'avion ne fait que trembler sur place. Pas de
-      // coordonnées brutes affichées : un couple de chiffres sans repère
-      // (ville, distance...) n'est lisible pour personne.
-      var suite = points[a.icao24];
-      var dernier = suite && suite.length ? suite[suite.length - 1] : null;
-      var quand = dernier ? depuis(dernier[2]) : null;
-      // Fraîcheur du signal lui-même — au-delà, pas assez d'écart pour que
-      // les paliers minute/heure de depuis() disent grand-chose : la
-      // seconde est la seule unité qui a du sens à ce rythme de sondage.
+      // Fraîcheur du signal — à ce rythme de sondage, la seconde est la
+      // seule unité qui a du sens (voir depuisPrecis). Ligne « activité »
+      // retirée : sur un avion en croisière, quelques centaines de mètres
+      // par sondage dépassent presque toujours le seuil de bruit, donc elle
+      // affichait la même chose que le signal — un doublon, pas une info en
+      // plus. Pas de coordonnées brutes non plus : un couple de chiffres
+      // sans repère (ville, distance...) n'est lisible pour personne.
       var signal = dernierSignal[a.icao24] ? depuisPrecis(dernierSignal[a.icao24]) : null;
       return '<div class="avion-etiquette"><span class="indicatif">' + a.indicatif + '</span>'
         + (morceaux.length ? '<div class="detail">' + morceaux.join(' · ') + '</div>' : '')
-        + (quand ? '<div class="detail">activité : ' + quand + '</div>' : '')
         + (signal ? '<div class="detail">signal ADS-B : ' + signal + '</div>' : '')
         + '</div>';
     }
