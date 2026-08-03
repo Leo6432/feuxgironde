@@ -14,7 +14,11 @@
   // ici.)
   var SOURCE = '/api/perimetre';
 
-  var carte = L.map('map', { scrollWheelZoom: true }).setView(FRANCE, ZOOM_FRANCE);
+  // Sous ce niveau, la carte dézoome assez pour montrer plusieurs copies du
+  // monde côte à côte (le fond de carte n'est pas borné à un seul pays) —
+  // aucun intérêt ici, le site ne couvre que la France.
+  var ZOOM_MINI = 5;
+  var carte = L.map('map', { scrollWheelZoom: true, minZoom: ZOOM_MINI }).setView(FRANCE, ZOOM_FRANCE);
   // Exposée pour que l'ouverture du panneau puisse prévenir Leaflet que la
   // zone visible a changé (invalidateSize).
   window.carteEmprise = carte;
@@ -419,12 +423,16 @@
       if (marqueurs[a.icao24]) {
         marqueurs[a.icao24].setLatLng(latlon);
         marqueurs[a.icao24].setIcon(icone(a));
-        marqueurs[a.icao24].setTooltipContent(etiquette(a));
+        marqueurs[a.icao24].setPopupContent(etiquette(a));
       } else {
+        // Popup plutôt que tooltip permanent : l'étiquette ne s'affiche
+        // qu'au clic (ou au tap, ce qui marche aussi sur mobile), pas en
+        // permanence pour chaque avion — avec plusieurs dizaines d'appareils
+        // suivis, des étiquettes toutes affichées à la fois surchargeaient
+        // la carte pour rien.
         marqueurs[a.icao24] = L.marker(latlon, { icon: icone(a) })
-          .bindTooltip(etiquette(a), {
-            direction: 'top', offset: [0, -12], opacity: .96, permanent: true,
-            className: 'avion-tooltip',
+          .bindPopup(etiquette(a), {
+            offset: [0, -14], closeButton: false, className: 'avion-tooltip',
           })
           .addTo(couche);
       }
@@ -515,10 +523,12 @@
 
     // Un vrai chronomètre, pas un texte figé jusqu'au prochain sondage
     // réseau : recalculé chaque seconde à partir de ce qu'on sait déjà
-    // (dernierSignal, points), sans requête supplémentaire.
+    // (dernierSignal, points), sans requête supplémentaire. setPopupContent
+    // ne fait rien voir tant que le popup est fermé — il ne prend effet
+    // visuellement que sur celui, s'il y en a un, ouvert au clic.
     function actualiserChronos() {
       Object.keys(marqueurs).forEach(function (icao) {
-        if (dernierAvion[icao]) marqueurs[icao].setTooltipContent(etiquette(dernierAvion[icao]));
+        if (dernierAvion[icao]) marqueurs[icao].setPopupContent(etiquette(dernierAvion[icao]));
       });
     }
 
