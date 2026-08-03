@@ -33,13 +33,18 @@ const { recupererAvions, enregistrerVus, vus24h } = require('../lib/avionsFeu');
 
 const CLE_CACHE = 'avions:etat:v1';
 const CLE_SECOURS = 'avions:secours:v1';
-// airplanes.live ne republie une position que toutes les ~60 s environ (le
-// rythme réel des sources ADS-B communautaires) : au-delà, mettre en cache
-// plus longtemps ne coûte rien de plus en fraîcheur. En revanche, un cache
-// plus long que le sondage du client (20 s, voir emprise.js) lui faisait
-// recevoir plusieurs fois de suite la même position — et donc aucun nouveau
-// point de sillage, puisque poserOuDeplacer n'en ajoute qu'au mouvement.
-const DUREE_CACHE_S = 15;
+// Un relevé confirmé (flamap : « signal ADS-B reçu il y a 15 s ») situe le
+// rythme réel de la source aux alentours de 12-15 s, pas 60 s comme supposé
+// avant d'avoir cette donnée. Resserré en conséquence — mais pas au-delà :
+// airplanes.live documente une limite de l'ordre d'1 requête par seconde, et
+// chaque sondage lui envoie déjà 4 requêtes (une par quadrant, voir
+// lib/avionsFeu.js). Ce cache est ce qui borne la fréquence de CES 4
+// requêtes, pas le sondage de chaque visiteur (voir DUREE_SONDAGE_MS côté
+// client) : à 8 s, un pic de visiteurs reste sous ~0,5 requête/s en moyenne
+// vers airplanes.live, avec de la marge. Descendre plus bas rapprocherait
+// dangereusement de leur limite, pour un gain de fraîcheur que la source
+// elle-même ne tiendrait de toute façon pas.
+const DUREE_CACHE_S = 8;
 const DUREE_SECOURS_S = 3600;
 
 module.exports = async (req, res) => {
@@ -47,19 +52,14 @@ module.exports = async (req, res) => {
   try { diag = new URL(req.url, 'http://x').searchParams.get('diag') === '1'; } catch (e) { /* pas de diag */ }
 
   // Même raisonnement pour le cache d'arête Vercel, devant le cache Redis :
-  // au pire 30 s de retard cumulé (10 + 20), toujours sous le rythme de la
-  // source, plutôt que les 75 s (15 + 60) d'avant qui pouvaient à eux seuls
-  // couvrir plus d'un sondage client sans rien de neuf à afficher.
+  // au pire 15 s de retard cumulé (5 + 10), sous le rythme de la source.
   //
-  // `max-age=0` en plus : `s-maxage` seul ne s'adresse qu'aux caches
-  // partagés (CDN) et le navigateur, lui, pouvait réutiliser sa PROPRE copie
-  // sans jamais revalider — un sondage client toutes les 20 s ne servait
-  // alors à rien si le navigateur répondait depuis son cache local. Ce
-  // n'est pas confirmé en direct (outils de déploiement indisponibles au
-  // moment d'écrire ceci), mais c'est correct dans tous les cas : ce
-  // réglage ne peut pas aggraver la fraîcheur, seulement l'améliorer.
+  // `max-age=0` : `s-maxage` seul ne s'adresse qu'aux caches partagés (CDN)
+  // et le navigateur, lui, pouvait réutiliser sa PROPRE copie sans jamais
+  // revalider — un sondage client ne servait alors à rien si le navigateur
+  // répondait depuis son cache local.
   res.setHeader('Cache-Control',
-    diag ? 'no-store' : 's-maxage=10, max-age=0, stale-while-revalidate=20');
+    diag ? 'no-store' : 's-maxage=5, max-age=0, stale-while-revalidate=10');
 
   let redis = null;
   try {

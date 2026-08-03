@@ -291,7 +291,10 @@
       + '<path d="M12 2c-.7 0-1.2.5-1.2 1.2v5.4L3.4 12.4v1.8l7.4-2.3v4.6l-2.1 1.5v1.5l2.9-.8.6-.1.6.1 '
       + '2.9.8v-1.5l-2.1-1.5v-4.6l7.4 2.3v-1.8l-7.4-3.8V3.2C13.2 2.5 12.7 2 12 2Z"/></svg>';
 
-    var DUREE_SONDAGE_MS = 20000;
+    // Aligné sur le cache serveur resserré (voir api/avions.js) : la source
+    // elle-même republie aux alentours de 12-15 s, sonder plus vite que ça
+    // ne recevrait que la même réponse en cache.
+    var DUREE_SONDAGE_MS = 10000;
     // Sillage glissant de 30 minutes : la queue s'efface toute seule à mesure
     // que la tête s'allonge, plutôt qu'un nombre de points fixe — un avion
     // lent et un avion rapide gardent ainsi le même horizon temporel.
@@ -306,6 +309,11 @@
     // dans la réponse, qu'il ait bougé ou non — la fraîcheur du signal ADS-B
     // lui-même, pas celle du dernier vrai déplacement (voir etiquette).
     var dernierSignal = {};
+    // Dernières données brutes (altitude, vitesse...) de chaque avion : sans
+    // ça, faire tourner l'étiquette en vrai chronomètre (voir actualiserChronos)
+    // obligerait à attendre le prochain sondage réseau pour la redessiner,
+    // au lieu de la recalculer chaque seconde à partir de ce qu'on sait déjà.
+    var dernierAvion = {};
 
     // Un rechargement de page vidait `points` : le sillage repartait de zéro
     // alors qu'il tenait toujours dans sa fenêtre de 30 min. Sauvegardé côté
@@ -376,12 +384,14 @@
       if (traces[icao]) { couche.removeLayer(traces[icao]); delete traces[icao]; }
       delete points[icao];
       delete dernierSignal[icao];
+      delete dernierAvion[icao];
     }
 
     function poserOuDeplacer(a) {
       var latlon = [a.lat, a.lon];
       var maintenant = Date.now();
       dernierSignal[a.icao24] = maintenant;
+      dernierAvion[a.icao24] = a;
 
       if (!points[a.icao24]) points[a.icao24] = [];
       var suite = points[a.icao24];
@@ -508,9 +518,19 @@
       }).catch(function () { afficherInfo('Suivi des avions indisponible.'); });
     }
 
+    // Un vrai chronomètre, pas un texte figé jusqu'au prochain sondage
+    // réseau : recalculé chaque seconde à partir de ce qu'on sait déjà
+    // (dernierSignal, points), sans requête supplémentaire.
+    function actualiserChronos() {
+      Object.keys(marqueurs).forEach(function (icao) {
+        if (dernierAvion[icao]) marqueurs[icao].setTooltipContent(etiquette(dernierAvion[icao]));
+      });
+    }
+
     chargerTracesSauvegardees();
     charger();
     setInterval(charger, DUREE_SONDAGE_MS);
+    setInterval(actualiserChronos, 1000);
   })();
 
   function arreter() {
