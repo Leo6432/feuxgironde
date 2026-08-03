@@ -18,7 +18,18 @@
   // monde côte à côte (le fond de carte n'est pas borné à un seul pays) —
   // aucun intérêt ici, le site ne couvre que la France.
   var ZOOM_MINI = 5;
-  var carte = L.map('map', { scrollWheelZoom: true, minZoom: ZOOM_MINI }).setView(FRANCE, ZOOM_FRANCE);
+  // minZoom n'empêche pas de PANORAMIQUER jusqu'à une copie du monde voisine
+  // au même niveau de zoom : le fond de carte se répète à l'infini vers
+  // l'est et l'ouest par défaut. Les feux et les avions, eux, n'existent
+  // qu'à leurs vraies coordonnées — sur une copie voisine, la carte est là
+  // mais vide de tout. maxBounds bloque le déplacement avant d'y arriver ;
+  // la marge (quelques degrés autour de la France) laisse quand même de la
+  // place pour voir les pays limitrophes.
+  var LIMITES_CARTE = L.latLngBounds([38, -12], [55, 18]);
+  var carte = L.map('map', {
+    scrollWheelZoom: true, minZoom: ZOOM_MINI,
+    maxBounds: LIMITES_CARTE, maxBoundsViscosity: 1.0,
+  }).setView(FRANCE, ZOOM_FRANCE);
   // Exposée pour que l'ouverture du panneau puisse prévenir Leaflet que la
   // zone visible a changé (invalidateSize).
   window.carteEmprise = carte;
