@@ -15,6 +15,7 @@
 
 const { getClient } = require('../lib/redis');
 const etatFeux = require('../lib/etatFeux');
+const sourcesRecurrentes = require('../lib/sourcesRecurrentes');
 
 // Marge sous la limite d'exécution de la fonction : on préfère s'arrêter en
 // annonçant ce qui reste à faire plutôt que d'être coupé en pleine réponse.
@@ -63,6 +64,11 @@ module.exports = async (req, res) => {
   const geometrieFrance = await etatFeux.frontiereFrance(redis).catch(() => null);
   const points = detections.points
     .filter((p) => (geometrieFrance ? etatFeux.dansGeometrie(p.lon, p.lat, geometrieFrance) : true));
+
+  // N'affecte rien de ce qui s'affiche (voir lib/sourcesRecurrentes.js) :
+  // alimente juste, jour après jour, la mémoire longue durée qui permettra
+  // un jour de repérer une source industrielle vue par VIIRS.
+  const sources = await sourcesRecurrentes.enregistrerJours(redis, points).catch(() => null);
 
   const maintenant = Date.now();
   const instants = etatFeux.instantsDisponibles(maintenant);
@@ -117,6 +123,10 @@ module.exports = async (req, res) => {
     calcules++;
   }
 
+  // Purement informatif (voir lib/sourcesRecurrentes.js) : suit
+  // l'accumulation dans le temps, ne filtre encore rien sur la carte.
+  const statsSources = await sourcesRecurrentes.statistiques(redis).catch(() => null);
+
   res.status(200).json({
     ok: true,
     crans: instants.length,
@@ -128,6 +138,9 @@ module.exports = async (req, res) => {
     mailleFineM: prepare.mailleMinM,
     detectionsDuCache: detections.duCache,
     frontierePrecise: !!geometrieFrance,
+    sourcesRecurrentes: sources && statsSources
+      ? Object.assign({ cellulesVues: sources.cellulesVues }, statsSources)
+      : null,
     dureeMs: Date.now() - depart,
     // Ce qu'il reste à faire est annoncé : un appel suivant reprendra là où
     // celui-ci s'est arrêté.
