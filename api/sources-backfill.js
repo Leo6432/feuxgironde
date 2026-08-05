@@ -82,7 +82,7 @@ module.exports = async (req, res) => {
 
   const geometrieFrance = await etatFeux.frontiereFrance(redis).catch(() => null);
 
-  let chunks = 0, joursTraites = 0, cellulesVues = 0;
+  let chunks = 0, joursTraites = 0, cellulesVues = 0, bloque = false;
   const erreurs = [];
 
   while (curseur <= fin) {
@@ -92,13 +92,27 @@ module.exports = async (req, res) => {
     const dateChunk = new Date(curseur).toISOString().slice(0, 10);
 
     let points = [];
+    let succes = 0;
     for (const capteur of CAPTEURS_SP) {
       try {
         const pts = await etatFeux.recuperer(capteur, cle, nJours, dateChunk);
         points = points.concat(pts);
+        succes++;
       } catch (e) {
         erreurs.push(capteur + ' ' + dateChunk + ' (' + nJours + 'j) : ' + e.message);
       }
+    }
+
+    if (!succes) {
+      // Aucun capteur n'a répondu pour cette tranche : avancer quand même
+      // la marquerait comme traitée alors qu'aucune donnée n'a été
+      // récupérée — exactement ce qui a fait sauter le 1er-10 décembre 2025
+      // lors du tout premier essai (day range invalide, mais le curseur
+      // avait avancé comme si de rien n'était). On s'arrête plutôt que de
+      // continuer sur une base fausse ; ?force=1 sur cette même tranche la
+      // reprendra une fois la cause corrigée.
+      bloque = true;
+      break;
     }
 
     const retenus = geometrieFrance
@@ -116,7 +130,7 @@ module.exports = async (req, res) => {
     } catch (e) { /* la prochaine invocation revérifiera depuis Redis, tant pis pour cette fois */ }
   }
 
-  const termine = curseur > fin;
+  const termine = curseur > fin && !bloque;
   const stats = await sourcesRecurrentes.statistiques(redis).catch(() => null);
 
   res.status(200).json({
@@ -127,10 +141,14 @@ module.exports = async (req, res) => {
     cellulesVues,
     erreurs,
     termine,
+    bloque,
     sourcesRecurrentes: stats,
     dureeMs: Date.now() - depart,
-    note: termine
-      ? 'période entièrement traitée'
-      : 'pas terminé faute de temps — relancer cet appel (sans ?force) reprendra la suite',
+    note: bloque
+      ? 'arrêté : aucun capteur n’a répondu pour la tranche du ' + new Date(curseur).toISOString().slice(0, 10)
+        + ' — corriger la cause (voir erreurs) puis relancer cet appel la reprendra'
+      : (termine
+        ? 'période entièrement traitée'
+        : 'pas terminé faute de temps — relancer cet appel (sans ?force) reprendra la suite'),
   });
 };
