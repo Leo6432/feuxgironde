@@ -86,6 +86,11 @@ module.exports = async (req, res) => {
     return;
   }
 
+  // Une seule fois pour tout le balayage chronologique (voir chargerEauFoyers) :
+  // l'eau intérieure ne bouge pas d'un cran à l'autre, la requêter à chaque
+  // cran serait un travail réseau perdu.
+  const foyersAvecEau = await etatFeux.chargerEauFoyers(prepare.foyers, prepare.origine, redis).catch(() => 0);
+
   // Chargée une seule fois pour tout le balayage chronologique, et non par
   // cran : les crans d'une même invocation partagent la même mémoire en
   // place (voir lib/etatFeux.js:zonesDepuisFoyers), une seule écriture
@@ -147,6 +152,7 @@ module.exports = async (req, res) => {
     mailleFineM: prepare.mailleMinM,
     detectionsDuCache: detections.duCache,
     frontierePrecise: !!geometrieFrance,
+    foyersAvecMasqueEau: foyersAvecEau,
     comblageCellulesNouvelles: nouveauxComblage.size,
     sourcesRecurrentes: sources && statsSources
       ? Object.assign({ cellulesVues: sources.cellulesVues }, statsSources)

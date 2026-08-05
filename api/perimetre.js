@@ -120,6 +120,7 @@ module.exports = async (req, res) => {
   let etat;
   try {
     const prepare = etatFeux.preparerFoyers(points);
+    await etatFeux.chargerEauFoyers(prepare.foyers, prepare.origine, redis).catch(() => 0);
     etatFeux.avancerJusqua(prepare.foyers, instant, prepare.origine, prepare.pasGrille);
     const comblage = await etatFeux.chargerComblage(redis);
     const nouveauxComblage = new Map();
