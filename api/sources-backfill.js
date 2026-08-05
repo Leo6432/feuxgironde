@@ -132,6 +132,10 @@ module.exports = async (req, res) => {
 
   const termine = curseur > fin && !bloque;
   const stats = await sourcesRecurrentes.statistiques(redis).catch(() => null);
+  // Le vrai décompte, celui qu'utilise réellement le filtre (voir
+  // sourcesConnues) — les seuils de `stats` ci-dessus sont juste indicatifs,
+  // le filtre se déclenche sur la date de première détection, pas un total.
+  const connues = await sourcesRecurrentes.sourcesConnues(redis, etatFeux.DEPART_FEU).catch(() => new Set());
 
   res.status(200).json({
     ok: true,
@@ -142,6 +146,7 @@ module.exports = async (req, res) => {
     erreurs,
     termine,
     bloque,
+    cellulesFiltreesActuellement: connues.size,
     sourcesRecurrentes: stats,
     dureeMs: Date.now() - depart,
     note: bloque
