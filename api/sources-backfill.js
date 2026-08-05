@@ -31,10 +31,11 @@ const CAPTEURS_SP = ['MODIS_SP', 'VIIRS_SNPP_SP', 'VIIRS_NOAA20_SP'];
 const DEBUT_DEFAUT = '2025-12-01';
 const FIN_DEFAUT = '2026-02-28';
 
-// Borne haute par requête, cohérente avec JOURS_FIRMS_MAX ailleurs dans le
-// code — pas de raison de croire l'archive SP moins limitée que le NRT sur
-// ce point précis.
-const PAS_JOURS = 10;
+// Borne haute par requête. Contrairement au NRT (jusqu'à 10, voir
+// JOURS_FIRMS_MAX dans lib/etatFeux.js), l'archive SP refuse au-delà de 5 —
+// confirmé en direct par NASA (« Invalid day range. Expects [1..5]. »),
+// pas une supposition reprise du NRT comme la première version le faisait.
+const PAS_JOURS = 5;
 const JOUR_MS = 86400000;
 
 const BUDGET_MS = 240000;
