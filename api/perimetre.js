@@ -121,9 +121,12 @@ module.exports = async (req, res) => {
   try {
     const prepare = etatFeux.preparerFoyers(points);
     etatFeux.avancerJusqua(prepare.foyers, instant, prepare.origine, prepare.pasGrille);
+    const comblage = await etatFeux.chargerComblage(redis);
+    const nouveauxComblage = new Map();
     const { zones, cellulesTotal } = etatFeux.zonesDepuisFoyers(
-      prepare.foyers, instant, prepare.origine, prepare.pasGrille
+      prepare.foyers, instant, prepare.origine, prepare.pasGrille, comblage, nouveauxComblage
     );
+    await etatFeux.enregistrerComblage(redis, nouveauxComblage);
     etat = etatFeux.sortie(
       instant, instants, zones, cellulesTotal, prepare.foyers.length,
       etatFeux.foyersActifs(points, instant), geometrieFrance, prepare, detections

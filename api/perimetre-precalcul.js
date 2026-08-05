@@ -86,6 +86,13 @@ module.exports = async (req, res) => {
     return;
   }
 
+  // Chargée une seule fois pour tout le balayage chronologique, et non par
+  // cran : les crans d'une même invocation partagent la même mémoire en
+  // place (voir lib/etatFeux.js:zonesDepuisFoyers), une seule écriture
+  // suffit ensuite pour tout archiver.
+  const comblage = await etatFeux.chargerComblage(redis);
+  const nouveauxComblage = new Map();
+
   let calcules = 0, sautes = 0, restants = 0;
   const chronologique = instants.slice().sort((a, b) => a - b);
 
@@ -113,7 +120,7 @@ module.exports = async (req, res) => {
     }
 
     const { zones, cellulesTotal } = etatFeux.zonesDepuisFoyers(
-      prepare.foyers, instant, prepare.origine, prepare.pasGrille
+      prepare.foyers, instant, prepare.origine, prepare.pasGrille, comblage, nouveauxComblage
     );
     const etat = etatFeux.sortie(
       instant, instants, zones, cellulesTotal, prepare.foyers.length,
@@ -122,6 +129,8 @@ module.exports = async (req, res) => {
     await etatFeux.enregistrerEtat(redis, instant, etat, instant === dernier);
     calcules++;
   }
+
+  await etatFeux.enregistrerComblage(redis, nouveauxComblage);
 
   // Purement informatif (voir lib/sourcesRecurrentes.js) : suit
   // l'accumulation dans le temps, ne filtre encore rien sur la carte.
@@ -138,6 +147,7 @@ module.exports = async (req, res) => {
     mailleFineM: prepare.mailleMinM,
     detectionsDuCache: detections.duCache,
     frontierePrecise: !!geometrieFrance,
+    comblageCellulesNouvelles: nouveauxComblage.size,
     sourcesRecurrentes: sources && statsSources
       ? Object.assign({ cellulesVues: sources.cellulesVues }, statsSources)
       : null,
