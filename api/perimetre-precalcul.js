@@ -95,7 +95,16 @@ module.exports = async (req, res) => {
   // cran : les crans d'une même invocation partagent la même mémoire en
   // place (voir lib/etatFeux.js:zonesDepuisFoyers), une seule écriture
   // suffit ensuite pour tout archiver.
-  const comblage = await etatFeux.chargerComblage(redis);
+  //
+  // `null` signale un échec de lecture, distinct d'une mémoire vide (voir
+  // chargerComblage) : on calcule quand même tous les crans (avec une
+  // mémoire vide locale), mais on n'écrit rien dans Redis à la fin — sans
+  // quoi une panne Redis transitoire ferait passer TOUTES les cellules
+  // comblées de cette invocation pour inédites, et ces dates fraîches
+  // fabriquées seraient gravées pour de bon dans une mémoire jamais purgée.
+  const comblageCharge = await etatFeux.chargerComblage(redis);
+  const lectureComblageEchouee = comblageCharge === null;
+  const comblage = comblageCharge || new Map();
   const nouveauxComblage = new Map();
 
   let calcules = 0, sautes = 0, restants = 0;
@@ -142,7 +151,7 @@ module.exports = async (req, res) => {
     calcules++;
   }
 
-  await etatFeux.enregistrerComblage(redis, nouveauxComblage);
+  if (!lectureComblageEchouee) await etatFeux.enregistrerComblage(redis, nouveauxComblage);
 
   // Purement informatif (voir lib/sourcesRecurrentes.js) : suit
   // l'accumulation dans le temps, ne filtre encore rien sur la carte.
@@ -161,6 +170,7 @@ module.exports = async (req, res) => {
     frontierePrecise: !!geometrieFrance,
     foyersAvecMasqueEau: foyersAvecEau,
     comblageCellulesNouvelles: nouveauxComblage.size,
+    comblageLectureEchouee: lectureComblageEchouee,
     sourcesRecurrentes: sources && statsSources
       ? Object.assign({ cellulesVues: sources.cellulesVues }, statsSources)
       : null,

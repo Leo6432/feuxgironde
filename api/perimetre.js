@@ -122,12 +122,20 @@ module.exports = async (req, res) => {
     const prepare = etatFeux.preparerFoyers(points);
     await etatFeux.chargerEauFoyers(prepare.foyers, prepare.origine, redis).catch(() => 0);
     etatFeux.avancerJusqua(prepare.foyers, instant, prepare.origine, prepare.pasGrille);
+    // `null` signale un échec de lecture, distinct d'une mémoire vide (voir
+    // chargerComblage) : dans ce cas on calcule quand même les zones (avec
+    // une mémoire vide locale, jamais persistée), mais on n'écrit rien dans
+    // Redis ensuite — sans quoi une panne Redis transitoire ferait passer
+    // TOUTES les cellules comblées de cet appel pour inédites, et ces dates
+    // fraîches fabriquées seraient gravées pour de bon dans une mémoire qui
+    // n'est jamais purgée.
     const comblage = await etatFeux.chargerComblage(redis);
+    const lectureComblageEchouee = comblage === null;
     const nouveauxComblage = new Map();
     const { zones, cellulesTotal } = etatFeux.zonesDepuisFoyers(
-      prepare.foyers, instant, prepare.origine, prepare.pasGrille, comblage, nouveauxComblage
+      prepare.foyers, instant, prepare.origine, prepare.pasGrille, comblage || new Map(), nouveauxComblage
     );
-    await etatFeux.enregistrerComblage(redis, nouveauxComblage);
+    if (!lectureComblageEchouee) await etatFeux.enregistrerComblage(redis, nouveauxComblage);
     // Seulement au cran le plus récent : une projection « +1 h » n'a de sens
     // qu'au tout dernier état connu (voir calculerFrontsPlausibles).
     const frontsPlausibles = estDernier
