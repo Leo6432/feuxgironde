@@ -203,9 +203,13 @@
           };
         }),
       }, {
-        // Les bords en escalier viennent de la grille des pixels satellite :
-        // les laisser tels quels, les lisser effacerait cette information.
-        smoothFactor: 0,
+        // Le dépôt de référence utilise ces mêmes weight/opacity/fillOpacity
+        // pour sa couche équivalente (arrival_step/last_activity_state), mais
+        // sans forcer smoothFactor ni lineCap/lineJoin — Leaflet lisse alors
+        // le tracé (simplification + jonctions arrondies) au lieu de montrer
+        // chaque marche de la grille brute. C'est un lissage d'AFFICHAGE
+        // seulement : les données envoyées par l'API restent le contour exact
+        // de la grille, seul le rendu change.
         style: function (f) {
           return {
             color: f.properties.couleur,
@@ -213,8 +217,6 @@
             opacity: 0.55,
             fillColor: f.properties.couleur,
             fillOpacity: 0.72,
-            lineCap: 'butt',
-            lineJoin: 'miter',
           };
         },
         onEachFeature: function (f, couche) {
