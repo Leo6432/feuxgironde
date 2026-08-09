@@ -46,6 +46,11 @@
 
   var instants = [];
   var calque = null;
+  // Distinct de `calque` : le front plausible n'est présent que sur la
+  // réponse du tout dernier instant (voir lib/etatFeux.js:calculerFrontsPlausibles)
+  // — absent partout ailleurs sur la barre temporelle, il doit alors
+  // disparaître plutôt que de garder l'ancien tracé affiché.
+  var calqueFront = null;
   var minuteur = null;
   // Jeton de course : en glissant le curseur, seule la réponse de la dernière
   // position demandée doit s'afficher, sinon une réponse tardive écraserait
@@ -225,6 +230,65 @@
     var total = zones.reduce(function (s, z) { return s + (z.surfaceKm2 || 0); }, 0);
     etiquette.textContent = formateDate(d.instant) + ' · '
       + (Math.round(total * 10) / 10).toLocaleString('fr-FR') + ' km²';
+
+    afficherFrontsPlausibles(d.frontsPlausibles);
+  }
+
+  var LIBELLE_CONFIANCE = { elevee: 'confiance élevée', moyenne: 'confiance moyenne' };
+
+  // Front plausible à +1 h / +3 h (voir lib/etatFeux.js:calculerFrontsPlausibles)
+  // — une estimation, pas un périmètre officiel, dessinée en contour non
+  // rempli (le remplissage est déjà celui des paliers d'âge) pour ne pas se
+  // confondre avec une zone réellement observée. N'existe que pour le tout
+  // dernier instant de la barre : ailleurs, `fronts` est absent et le calque
+  // se contente de disparaître.
+  function afficherFrontsPlausibles(fronts) {
+    if (calqueFront) { carte.removeLayer(calqueFront); calqueFront = null; }
+    if (!fronts || !fronts.length) return;
+
+    function couche(cle, couleur, tirets) {
+      var features = fronts
+        .filter(function (f) { return f[cle]; })
+        .map(function (f) {
+          return {
+            type: 'Feature',
+            geometry: f[cle],
+            properties: {
+              confiance: f.confiance, fractionCoherente: f.fractionCoherente,
+              vitesseMedianeKmh: f.vitesseMedianeKmh, horizon: cle === 'plus_1h' ? '1 h' : '3 h',
+            },
+          };
+        });
+      if (!features.length) return null;
+      return L.geoJSON({ type: 'FeatureCollection', features: features }, {
+        smoothFactor: 0,
+        style: function () {
+          return {
+            color: couleur, weight: 2, opacity: 0.85, dashArray: tirets,
+            fill: false,
+          };
+        },
+        onEachFeature: function (f, c) {
+          var p = f.properties;
+          c.bindTooltip(
+            '<b>Front plausible à +' + p.horizon + '</b><br>'
+              + LIBELLE_CONFIANCE[p.confiance] + ' · bord cohérent ' + Math.round(p.fractionCoherente * 100) + '%'
+              + (p.vitesseMedianeKmh != null ? '<br>vitesse mesurée ≈ ' + p.vitesseMedianeKmh + ' km/h' : '')
+              + '<br><i>estimation, pas un périmètre officiel</i>',
+            { sticky: true, opacity: 0.96 }
+          );
+        },
+      });
+    }
+
+    // +3 h dessous, +1 h dessus : le tracé le plus proche (et le plus sûr)
+    // doit rester visible là où les deux se recouvrent.
+    var groupe = L.layerGroup();
+    var c3 = couche('plus_3h', '#d86cff', '2,6');
+    var c1 = couche('plus_1h', '#e53935', '8,6');
+    if (c3) c3.addTo(groupe);
+    if (c1) c1.addTo(groupe);
+    calqueFront = groupe.addTo(carte);
   }
 
   // Les zones arrivent en pages (voir lib/etatFeux.js:paginerZones côté

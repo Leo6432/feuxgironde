@@ -127,9 +127,16 @@ module.exports = async (req, res) => {
     const { zones, cellulesTotal } = etatFeux.zonesDepuisFoyers(
       prepare.foyers, instant, prepare.origine, prepare.pasGrille, comblage, nouveauxComblage
     );
+    // Seulement au cran le plus récent : une projection « +1 h » n'a de sens
+    // qu'au tout dernier état connu, pas rejouée pour chaque cran archivé
+    // (voir lib/etatFeux.js:calculerFrontsPlausibles).
+    const frontsPlausibles = instant === dernier
+      ? etatFeux.calculerFrontsPlausibles(prepare.foyers, prepare.origine)
+      : undefined;
     const etat = etatFeux.sortie(
       instant, instants, zones, cellulesTotal, prepare.foyers.length,
-      etatFeux.foyersActifs(points, instant), geometrieFrance, prepare, detections
+      etatFeux.foyersActifs(points, instant), geometrieFrance, prepare, detections,
+      frontsPlausibles
     );
     await etatFeux.enregistrerEtat(redis, instant, etat, instant === dernier);
     calcules++;

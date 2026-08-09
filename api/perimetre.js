@@ -128,9 +128,15 @@ module.exports = async (req, res) => {
       prepare.foyers, instant, prepare.origine, prepare.pasGrille, comblage, nouveauxComblage
     );
     await etatFeux.enregistrerComblage(redis, nouveauxComblage);
+    // Seulement au cran le plus récent : une projection « +1 h » n'a de sens
+    // qu'au tout dernier état connu (voir calculerFrontsPlausibles).
+    const frontsPlausibles = estDernier
+      ? etatFeux.calculerFrontsPlausibles(prepare.foyers, prepare.origine)
+      : undefined;
     etat = etatFeux.sortie(
       instant, instants, zones, cellulesTotal, prepare.foyers.length,
-      etatFeux.foyersActifs(points, instant), geometrieFrance, prepare, detections
+      etatFeux.foyersActifs(points, instant), geometrieFrance, prepare, detections,
+      frontsPlausibles
     );
   } catch (e) {
     res.status(200).json({ ok: false, raison: 'calcul des zones échoué : ' + e.message, instants });
